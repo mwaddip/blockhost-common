@@ -23,6 +23,7 @@ from .config import (
     load_config,
     load_db_config,
     load_web3_config,
+    load_broker_allocation,
 )
 from .vm_db import get_database, VMDatabase, MockVMDatabase, VMDatabaseBase
 
@@ -38,6 +39,7 @@ __all__ = [
     "load_config",
     "load_db_config",
     "load_web3_config",
+    "load_broker_allocation",
     # Database classes
     "get_database",
     "VMDatabase",

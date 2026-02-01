@@ -36,7 +36,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from .config import load_db_config, DATA_DIR
+from .config import load_db_config, load_broker_allocation, DATA_DIR
 
 
 class VMDatabaseBase(ABC):
@@ -73,7 +73,12 @@ class VMDatabaseBase(ABC):
 
     @abstractmethod
     def allocate_ip(self) -> Optional[str]:
-        """Allocate the next available IP address."""
+        """Allocate the next available IPv4 address."""
+        pass
+
+    @abstractmethod
+    def allocate_ipv6(self) -> Optional[str]:
+        """Allocate the next available IPv6 address."""
         pass
 
     @abstractmethod
@@ -138,6 +143,11 @@ class VMDatabase(VMDatabaseBase):
         self.fields = self.config["fields"]
         self.ip_pool = self.config["ip_pool"]
         self.vmid_range = self.config["vmid_range"]
+        self.ipv6_pool = self.config.get("ipv6_pool", {"start": 2, "end": 254})
+
+        # Load broker allocation for IPv6 prefix (may be None if not configured)
+        broker_allocation = load_broker_allocation(fallback_dir)
+        self.ipv6_prefix = broker_allocation.get("prefix") if broker_allocation else None
 
         # Ensure database directory exists
         self.db_file.parent.mkdir(parents=True, exist_ok=True)
@@ -148,6 +158,7 @@ class VMDatabase(VMDatabaseBase):
                 "vms": {},
                 "next_vmid": self.vmid_range["start"],
                 "allocated_ips": [],
+                "allocated_ipv6": [],
                 "next_nft_token_id": 0,
                 "nft_tokens": {},
             })
@@ -240,7 +251,7 @@ class VMDatabase(VMDatabaseBase):
         return vm
 
     def mark_destroyed(self, name: str) -> None:
-        """Mark a VM as destroyed and release its IP."""
+        """Mark a VM as destroyed and release its IPs."""
         db = self._read_db()
 
         if name not in db["vms"]:
@@ -250,15 +261,20 @@ class VMDatabase(VMDatabaseBase):
         vm["status"] = "destroyed"
         vm["destroyed_at"] = datetime.now(timezone.utc).isoformat()
 
-        # Release IP
+        # Release IPv4
         ip = vm.get("ip_address")
         if ip and ip in db["allocated_ips"]:
             db["allocated_ips"].remove(ip)
 
+        # Release IPv6
+        ipv6 = vm.get("ipv6_address")
+        if ipv6 and ipv6 in db.get("allocated_ipv6", []):
+            db["allocated_ipv6"].remove(ipv6)
+
         self._write_db(db)
 
     def allocate_ip(self) -> Optional[str]:
-        """Allocate the next available IP address from the pool."""
+        """Allocate the next available IPv4 address from the pool."""
         db = self._read_db()
 
         network_prefix = ".".join(self.ip_pool["network"].split(".")[:3])
@@ -273,6 +289,38 @@ class VMDatabase(VMDatabaseBase):
                 return ip
 
         return None  # Pool exhausted
+
+    def allocate_ipv6(self) -> Optional[str]:
+        """Allocate the next available IPv6 address from the pool."""
+        if not self.ipv6_prefix:
+            return None  # IPv6 not configured (no broker allocation)
+
+        import ipaddress
+        db = self._read_db()
+        db.setdefault("allocated_ipv6", [])
+
+        # Parse prefix to get network base
+        network = ipaddress.IPv6Network(self.ipv6_prefix, strict=False)
+        base = int(network.network_address)
+
+        start = self.ipv6_pool.get("start", 2)
+        end = self.ipv6_pool.get("end", 254)
+
+        for i in range(start, end + 1):
+            ipv6 = str(ipaddress.IPv6Address(base + i))
+            if ipv6 not in db["allocated_ipv6"]:
+                db["allocated_ipv6"].append(ipv6)
+                self._write_db(db)
+                return ipv6
+
+        return None  # Pool exhausted
+
+    def release_ipv6(self, ipv6: str) -> None:
+        """Release an IPv6 address back to the pool."""
+        db = self._read_db()
+        if ipv6 in db.get("allocated_ipv6", []):
+            db["allocated_ipv6"].remove(ipv6)
+            self._write_db(db)
 
     def allocate_vmid(self) -> int:
         """Allocate the next available VMID."""
@@ -374,8 +422,16 @@ class MockVMDatabase(VMDatabaseBase):
         self,
         db_file: Optional[str] = None,
         fallback_dir: Optional[Path] = None,
+        mock_ipv6_prefix: Optional[str] = "fd00::/120",
     ):
-        """Initialize mock database."""
+        """
+        Initialize mock database.
+
+        Args:
+            db_file: Path to mock database file
+            fallback_dir: Fallback directory for config lookup
+            mock_ipv6_prefix: Mock IPv6 prefix for testing (default: fd00:mock:test::/120)
+        """
         if db_file is None:
             db_file = Path.cwd() / "mock-db.json"
         self.db_file = Path(db_file)
@@ -384,12 +440,21 @@ class MockVMDatabase(VMDatabaseBase):
         self.config = load_db_config(fallback_dir)
         self.ip_pool = self.config["ip_pool"]
         self.vmid_range = self.config["vmid_range"]
+        self.ipv6_pool = self.config.get("ipv6_pool", {"start": 2, "end": 254})
+
+        # Use mock prefix for testing, or try to load real broker allocation
+        if mock_ipv6_prefix:
+            self.ipv6_prefix = mock_ipv6_prefix
+        else:
+            broker_allocation = load_broker_allocation(fallback_dir)
+            self.ipv6_prefix = broker_allocation.get("prefix") if broker_allocation else None
 
         if not self.db_file.exists():
             self._write_db({
                 "vms": {},
                 "next_vmid": self.vmid_range["start"],
                 "allocated_ips": [],
+                "allocated_ipv6": [],
                 "next_nft_token_id": 0,
                 "nft_tokens": {},
             })
@@ -473,9 +538,15 @@ class MockVMDatabase(VMDatabaseBase):
         vm["status"] = "destroyed"
         vm["destroyed_at"] = datetime.now(timezone.utc).isoformat()
 
+        # Release IPv4
         ip = vm.get("ip_address")
         if ip and ip in db["allocated_ips"]:
             db["allocated_ips"].remove(ip)
+
+        # Release IPv6
+        ipv6 = vm.get("ipv6_address")
+        if ipv6 and ipv6 in db.get("allocated_ipv6", []):
+            db["allocated_ipv6"].remove(ipv6)
 
         self._write_db(db)
 
@@ -492,6 +563,31 @@ class MockVMDatabase(VMDatabaseBase):
                 self._write_db(db)
                 return ip
         return None
+
+    def allocate_ipv6(self) -> Optional[str]:
+        """Allocate the next available IPv6 address from the pool."""
+        if not self.ipv6_prefix:
+            return None  # IPv6 not configured
+
+        import ipaddress
+        db = self._read_db()
+        db.setdefault("allocated_ipv6", [])
+
+        # Parse prefix to get network base
+        network = ipaddress.IPv6Network(self.ipv6_prefix, strict=False)
+        base = int(network.network_address)
+
+        start = self.ipv6_pool.get("start", 2)
+        end = self.ipv6_pool.get("end", 254)
+
+        for i in range(start, end + 1):
+            ipv6 = str(ipaddress.IPv6Address(base + i))
+            if ipv6 not in db["allocated_ipv6"]:
+                db["allocated_ipv6"].append(ipv6)
+                self._write_db(db)
+                return ipv6
+
+        return None  # Pool exhausted
 
     def allocate_vmid(self) -> int:
         db = self._read_db()

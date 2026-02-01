@@ -16,6 +16,7 @@ Usage:
     web3_config = load_web3_config()
 """
 
+import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -47,6 +48,7 @@ DB_FILE = DATA_DIR / "vms.json"
 DB_CONFIG_FILE = "db.yaml"
 WEB3_CONFIG_FILE = "web3-defaults.yaml"
 BLOCKHOST_CONFIG_FILE = "blockhost.yaml"
+BROKER_ALLOCATION_FILE = "broker-allocation.json"
 
 
 # =============================================================================
@@ -159,6 +161,43 @@ def load_blockhost_config(fallback_dir: Optional[Path] = None) -> dict:
         - contract_address: Deployed subscription contract address
     """
     return load_config(BLOCKHOST_CONFIG_FILE, fallback_dir)
+
+
+def load_broker_allocation(fallback_dir: Optional[Path] = None) -> Optional[dict]:
+    """
+    Load the broker allocation configuration (broker-allocation.json).
+
+    This file is created by blockhost-broker-client when registering with
+    the IPv6 tunnel broker. It contains the allocated IPv6 prefix and
+    WireGuard tunnel configuration.
+
+    Args:
+        fallback_dir: Optional fallback directory for development
+
+    Returns:
+        Configuration dictionary with keys:
+        - prefix: Allocated IPv6 prefix (e.g., "2a11:6c7:f04:276::/120")
+        - gateway: IPv6 gateway address
+        - broker_pubkey: WireGuard public key of the broker
+        - broker_endpoint: WireGuard endpoint of the broker
+        Or None if the file doesn't exist (broker not configured)
+    """
+    search_paths = [
+        CONFIG_DIR / BROKER_ALLOCATION_FILE,
+    ]
+
+    if fallback_dir:
+        search_paths.append(fallback_dir / BROKER_ALLOCATION_FILE)
+
+    # Development fallback
+    search_paths.append(Path("config") / BROKER_ALLOCATION_FILE)
+
+    for path in search_paths:
+        if path.exists():
+            with open(path) as f:
+                return json.load(f)
+
+    return None  # Broker not configured
 
 
 def get_db_file_path(fallback_dir: Optional[Path] = None) -> Path:

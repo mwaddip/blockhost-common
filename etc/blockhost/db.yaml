@@ -21,13 +21,20 @@ fields:
   status: status
   created_at: created_at
 
-# IP allocation pool for provisioned VMs
+# IPv4 allocation pool for provisioned VMs
 # Adjust network, start, and end to match your infrastructure
 ip_pool:
   network: "192.168.122.0/24"
   start: 200
   end: 250
   gateway: "192.168.122.1"
+
+# IPv6 allocation pool for provisioned VMs
+# The prefix is read from /etc/blockhost/broker-allocation.json (created by broker-client)
+# These settings control which addresses within the prefix are allocated to VMs
+ipv6_pool:
+  start: 2    # Skip ::0 (network) and ::1 (Proxmox host uses ::1)
+  end: 254    # Last usable address in a /120
 
 # VMID range for dynamically created VMs
 # Must not conflict with existing VMs or templates on your Proxmox host
