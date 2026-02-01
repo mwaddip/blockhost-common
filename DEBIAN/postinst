@@ -1,0 +1,32 @@
+#!/bin/bash
+# Post-installation script for blockhost-common
+
+set -e
+
+# Create blockhost group if it doesn't exist
+if ! getent group blockhost > /dev/null 2>&1; then
+    addgroup --system blockhost
+fi
+
+# Set directory permissions
+chown root:blockhost /etc/blockhost
+chmod 750 /etc/blockhost
+
+chown root:blockhost /var/lib/blockhost
+chmod 750 /var/lib/blockhost
+
+# Config files should be readable by blockhost group
+for conf in /etc/blockhost/*.yaml; do
+    if [ -f "$conf" ]; then
+        chown root:blockhost "$conf"
+        chmod 640 "$conf"
+    fi
+done
+
+echo "blockhost-common: Directories and permissions configured"
+echo "  Config dir: /etc/blockhost/ (root:blockhost 750)"
+echo "  Data dir:   /var/lib/blockhost/ (root:blockhost 750)"
+
+#DEBHELPER#
+
+exit 0

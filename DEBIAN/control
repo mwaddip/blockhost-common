@@ -1,0 +1,16 @@
+Package: blockhost-common
+Version: 0.1.0
+Section: admin
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.10), python3-yaml
+Maintainer: Blockhost Team <blockhost@example.com>
+Description: Common configuration and libraries for Blockhost
+ This package provides the base directory structure, configuration
+ file templates, and shared Python modules used by all Blockhost
+ components.
+ .
+ Includes:
+  - /etc/blockhost/ directory structure
+  - Configuration file templates (db.yaml, web3-defaults.yaml)
+  - Python blockhost module with config loading and VM database

@@ -1,0 +1,10 @@
+#!/bin/bash
+# Pre-removal script for blockhost-common
+
+set -e
+
+# Nothing to do before removal - directories are managed by dpkg
+
+#DEBHELPER#
+
+exit 0

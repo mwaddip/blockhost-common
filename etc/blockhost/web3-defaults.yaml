@@ -1,0 +1,52 @@
+# Blockhost Web3/Blockchain Configuration
+# Global defaults for NFT authentication and blockchain interaction.
+#
+# Managed by: blockhost-common (template), blockhost-engine (populated)
+# Used by: blockhost-provisioner, VM cloud-init, PAM authentication
+#
+# IMPORTANT: After installation, run `blockhost-init` or manually configure
+# the contract address and deployer key before provisioning VMs.
+
+blockchain:
+  # Ethereum chain ID
+  # Common values:
+  #   1 = Ethereum Mainnet
+  #   11155111 = Sepolia Testnet
+  #   84532 = Base Sepolia
+  chain_id: 11155111
+
+  # AccessCredentialNFT contract address
+  # Set this after deploying the contract with `blockhost-deploy`
+  # Leave empty until deployment
+  nft_contract: ""
+
+  # JSON-RPC endpoint URL for blockchain queries
+  # Public endpoints work but may have rate limits
+  # For production, use Infura, Alchemy, or your own node
+  rpc_url: "https://ethereum-sepolia-rpc.publicnode.com"
+
+# Contract deployer wallet configuration
+# The deployer key is used to mint NFTs after VM provisioning
+deployer:
+  # Path to the private key file (hex format, no 0x prefix)
+  # This file is created by `blockhost-init` and should be chmod 600
+  private_key_file: "/etc/blockhost/deployer.key"
+
+# Signing page configuration
+# The signing page is embedded in NFTs and served by VMs for authentication
+signing_page:
+  # Port the VM serves the signing page on
+  port: 8080
+
+  # Path to signing page HTML (from libpam-web3-tools package)
+  # This is embedded in the NFT during minting
+  html_path: "/usr/share/libpam-web3-tools/signing-page/index.html"
+
+# OTP authentication settings
+# These control the one-time password generated after wallet signature
+auth:
+  # Number of digits in the OTP code
+  otp_length: 6
+
+  # How long the OTP remains valid (in seconds)
+  otp_ttl_seconds: 300
