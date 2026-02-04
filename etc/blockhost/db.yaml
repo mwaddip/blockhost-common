@@ -48,4 +48,4 @@ default_expiry_days: 30
 
 # Grace period before garbage collector destroys expired VMs (in days)
 # Users have this many days after expiry to renew before VM destruction
-gc_grace_days: 3
+gc_grace_days: 7
