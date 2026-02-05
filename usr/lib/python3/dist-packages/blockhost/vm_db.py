@@ -39,6 +39,90 @@ from typing import Optional
 from .config import load_db_config, load_broker_allocation, DATA_DIR
 
 
+# Default field mappings
+DEFAULT_FIELDS = {
+    "vm_name": "vm_name",
+    "vmid": "vmid",
+    "ip_address": "ip_address",
+    "expires_at": "expires_at",
+    "owner": "owner",
+    "status": "status",
+    "created_at": "created_at",
+}
+
+# Default database file path
+DEFAULT_DB_FILE = "/var/lib/blockhost/vms.json"
+
+
+def _normalize_ip_pool(ip_pool: dict) -> dict:
+    """
+    Normalize IP pool config to handle both formats:
+    - Integer format: start: 200, end: 250 (last octet only)
+    - String format: start: "192.168.122.200", end: "192.168.122.250" (full IP)
+
+    Returns normalized dict with integer start/end (last octet only).
+    """
+    normalized = ip_pool.copy()
+
+    # Handle start
+    start = ip_pool.get("start", 200)
+    if isinstance(start, str):
+        # Extract last octet from full IP string
+        normalized["start"] = int(start.split(".")[-1])
+    else:
+        normalized["start"] = int(start)
+
+    # Handle end
+    end = ip_pool.get("end", 250)
+    if isinstance(end, str):
+        # Extract last octet from full IP string
+        normalized["end"] = int(end.split(".")[-1])
+    else:
+        normalized["end"] = int(end)
+
+    return normalized
+
+
+def _normalize_config(config: dict) -> dict:
+    """
+    Normalize database config to handle various formats.
+
+    Handles:
+    - vmid_range vs vmid_pool key names
+    - IP pool start/end as integers or full IP strings
+    - Optional fields dict with defaults
+    - Optional db_file with default path
+    """
+    normalized = config.copy()
+
+    # Accept both vmid_range and vmid_pool
+    if "vmid_range" not in normalized and "vmid_pool" in normalized:
+        normalized["vmid_range"] = normalized.pop("vmid_pool")
+    elif "vmid_range" not in normalized:
+        normalized["vmid_range"] = {"start": 100, "end": 999}
+
+    # Normalize IP pool
+    if "ip_pool" in normalized:
+        normalized["ip_pool"] = _normalize_ip_pool(normalized["ip_pool"])
+    else:
+        normalized["ip_pool"] = {
+            "network": "192.168.122.0/24",
+            "start": 200,
+            "end": 250,
+            "gateway": "192.168.122.1",
+        }
+
+    # Default fields
+    if "fields" not in normalized:
+        normalized["fields"] = DEFAULT_FIELDS.copy()
+
+    # Default db_file
+    if "db_file" not in normalized:
+        normalized["db_file"] = DEFAULT_DB_FILE
+
+    return normalized
+
+
 class VMDatabaseBase(ABC):
     """Abstract base class for VM database implementations."""
 
@@ -155,9 +239,12 @@ class VMDatabase(VMDatabaseBase):
         if config_path is not None:
             import yaml
             with open(config_path) as f:
-                self.config = yaml.safe_load(f)
+                raw_config = yaml.safe_load(f)
         else:
-            self.config = load_db_config(fallback_dir)
+            raw_config = load_db_config(fallback_dir)
+
+        # Normalize config to handle various formats
+        self.config = _normalize_config(raw_config)
 
         self.db_file = Path(self.config["db_file"])
         self.fields = self.config["fields"]
@@ -532,8 +619,9 @@ class MockVMDatabase(VMDatabaseBase):
             db_file = Path.cwd() / "mock-db.json"
         self.db_file = Path(db_file)
 
-        # Load config for IP pool settings
-        self.config = load_db_config(fallback_dir)
+        # Load and normalize config for IP pool settings
+        raw_config = load_db_config(fallback_dir)
+        self.config = _normalize_config(raw_config)
         self.ip_pool = self.config["ip_pool"]
         self.vmid_range = self.config["vmid_range"]
         self.ipv6_pool = self.config.get("ipv6_pool", {"start": 2, "end": 254})

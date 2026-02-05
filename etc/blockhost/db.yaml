@@ -3,15 +3,21 @@
 #
 # Managed by: blockhost-common
 # Used by: blockhost-provisioner, blockhost-engine
-
-# Terraform working directory (where .tf.json files go and terraform runs)
-# This is typically set during blockhost-engine initialization
-terraform_dir: /var/lib/blockhost/terraform
+#
+# Schema Notes:
+# - All fields are optional; sensible defaults are applied
+# - vmid_range and vmid_pool are accepted interchangeably
+# - ip_pool.start/end accept integers (last octet) or full IP strings
 
 # Database file path (JSON file tracking VMs, IPs, and NFT tokens)
+# Default: /var/lib/blockhost/vms.json
 db_file: /var/lib/blockhost/vms.json
 
-# Field name mappings (for compatibility/migration to other backends)
+# Terraform working directory (where .tf.json files go and terraform runs)
+terraform_dir: /var/lib/blockhost/terraform
+
+# Field name mappings (optional - defaults shown below)
+# Used for compatibility/migration to other backends
 fields:
   vm_name: vm_name
   vmid: vmid
@@ -22,7 +28,9 @@ fields:
   created_at: created_at
 
 # IPv4 allocation pool for provisioned VMs
-# Adjust network, start, and end to match your infrastructure
+# start/end can be integers (last octet only) or full IP strings:
+#   start: 200                    # Integer format (recommended)
+#   start: "192.168.122.200"      # Full IP string format (also accepted)
 ip_pool:
   network: "192.168.122.0/24"
   start: 200
@@ -37,6 +45,7 @@ ipv6_pool:
   end: 254    # Last usable address in a /120
 
 # VMID range for dynamically created VMs
+# Note: vmid_pool is also accepted as an alias for vmid_range
 # Must not conflict with existing VMs or templates on your Proxmox host
 vmid_range:
   start: 100
@@ -47,5 +56,5 @@ vmid_range:
 default_expiry_days: 30
 
 # Grace period before garbage collector destroys expired VMs (in days)
-# Users have this many days after expiry to renew before VM destruction
+# Users have this many days after suspension to renew before VM destruction
 gc_grace_days: 7
