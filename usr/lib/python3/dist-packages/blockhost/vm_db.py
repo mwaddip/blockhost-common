@@ -67,8 +67,28 @@ class VMDatabaseBase(ABC):
         pass
 
     @abstractmethod
+    def mark_suspended(self, name: str) -> None:
+        """Mark a VM as suspended (Phase 1 of garbage collection)."""
+        pass
+
+    @abstractmethod
+    def mark_active(self, name: str, new_expiry: Optional[datetime] = None) -> None:
+        """Mark a VM as active (reactivate a suspended VM)."""
+        pass
+
+    @abstractmethod
     def mark_destroyed(self, name: str) -> None:
-        """Mark a VM as destroyed."""
+        """Mark a VM as destroyed (Phase 2 of garbage collection)."""
+        pass
+
+    @abstractmethod
+    def get_vms_to_suspend(self) -> list[dict]:
+        """Get active VMs that have expired and are ready for suspension."""
+        pass
+
+    @abstractmethod
+    def get_vms_to_destroy(self, grace_days: int) -> list[dict]:
+        """Get suspended VMs past grace period that are ready for destruction."""
         pass
 
     @abstractmethod
@@ -250,8 +270,41 @@ class VMDatabase(VMDatabaseBase):
         self._write_db(db)
         return vm
 
+    def mark_suspended(self, name: str) -> None:
+        """Mark a VM as suspended (Phase 1 of garbage collection)."""
+        db = self._read_db()
+
+        if name not in db["vms"]:
+            raise ValueError(f"VM '{name}' not found")
+
+        vm = db["vms"][name]
+        vm["status"] = "suspended"
+        vm["suspended_at"] = datetime.now(timezone.utc).isoformat()
+
+        self._write_db(db)
+
+    def mark_active(self, name: str, new_expiry: Optional[datetime] = None) -> None:
+        """Mark a VM as active (reactivate a suspended VM)."""
+        db = self._read_db()
+
+        if name not in db["vms"]:
+            raise ValueError(f"VM '{name}' not found")
+
+        vm = db["vms"][name]
+        vm["status"] = "active"
+
+        # Clear suspended_at
+        if "suspended_at" in vm:
+            del vm["suspended_at"]
+
+        # Update expiry if provided
+        if new_expiry is not None:
+            vm["expires_at"] = new_expiry.isoformat()
+
+        self._write_db(db)
+
     def mark_destroyed(self, name: str) -> None:
-        """Mark a VM as destroyed and release its IPs."""
+        """Mark a VM as destroyed and release its IPs (Phase 2 of garbage collection)."""
         db = self._read_db()
 
         if name not in db["vms"]:
@@ -272,6 +325,49 @@ class VMDatabase(VMDatabaseBase):
             db["allocated_ipv6"].remove(ipv6)
 
         self._write_db(db)
+
+    def get_vms_to_suspend(self) -> list[dict]:
+        """Get active VMs that have expired and are ready for suspension."""
+        db = self._read_db()
+        now = datetime.now(timezone.utc)
+        to_suspend = []
+
+        for vm in db["vms"].values():
+            if vm.get("status") != "active":
+                continue
+
+            expires_at = datetime.fromisoformat(
+                vm["expires_at"].replace("Z", "+00:00")
+            )
+
+            if now > expires_at:
+                to_suspend.append(vm)
+
+        return to_suspend
+
+    def get_vms_to_destroy(self, grace_days: int) -> list[dict]:
+        """Get suspended VMs past grace period that are ready for destruction."""
+        db = self._read_db()
+        now = datetime.now(timezone.utc)
+        to_destroy = []
+
+        for vm in db["vms"].values():
+            if vm.get("status") != "suspended":
+                continue
+
+            suspended_at = vm.get("suspended_at")
+            if not suspended_at:
+                continue
+
+            suspended_at = datetime.fromisoformat(
+                suspended_at.replace("Z", "+00:00")
+            )
+            grace_expires = suspended_at + timedelta(days=grace_days)
+
+            if now > grace_expires:
+                to_destroy.append(vm)
+
+        return to_destroy
 
     def allocate_ip(self) -> Optional[str]:
         """Allocate the next available IPv4 address from the pool."""
@@ -529,7 +625,41 @@ class MockVMDatabase(VMDatabaseBase):
         self._write_db(db)
         return vm
 
+    def mark_suspended(self, name: str) -> None:
+        """Mark a VM as suspended (Phase 1 of garbage collection)."""
+        db = self._read_db()
+
+        if name not in db["vms"]:
+            raise ValueError(f"VM '{name}' not found")
+
+        vm = db["vms"][name]
+        vm["status"] = "suspended"
+        vm["suspended_at"] = datetime.now(timezone.utc).isoformat()
+
+        self._write_db(db)
+
+    def mark_active(self, name: str, new_expiry: Optional[datetime] = None) -> None:
+        """Mark a VM as active (reactivate a suspended VM)."""
+        db = self._read_db()
+
+        if name not in db["vms"]:
+            raise ValueError(f"VM '{name}' not found")
+
+        vm = db["vms"][name]
+        vm["status"] = "active"
+
+        # Clear suspended_at
+        if "suspended_at" in vm:
+            del vm["suspended_at"]
+
+        # Update expiry if provided
+        if new_expiry is not None:
+            vm["expires_at"] = new_expiry.isoformat()
+
+        self._write_db(db)
+
     def mark_destroyed(self, name: str) -> None:
+        """Mark a VM as destroyed and release its IPs (Phase 2 of garbage collection)."""
         db = self._read_db()
         if name not in db["vms"]:
             raise ValueError(f"VM '{name}' not found")
@@ -549,6 +679,49 @@ class MockVMDatabase(VMDatabaseBase):
             db["allocated_ipv6"].remove(ipv6)
 
         self._write_db(db)
+
+    def get_vms_to_suspend(self) -> list[dict]:
+        """Get active VMs that have expired and are ready for suspension."""
+        db = self._read_db()
+        now = datetime.now(timezone.utc)
+        to_suspend = []
+
+        for vm in db["vms"].values():
+            if vm.get("status") != "active":
+                continue
+
+            expires_at = datetime.fromisoformat(
+                vm["expires_at"].replace("Z", "+00:00")
+            )
+
+            if now > expires_at:
+                to_suspend.append(vm)
+
+        return to_suspend
+
+    def get_vms_to_destroy(self, grace_days: int) -> list[dict]:
+        """Get suspended VMs past grace period that are ready for destruction."""
+        db = self._read_db()
+        now = datetime.now(timezone.utc)
+        to_destroy = []
+
+        for vm in db["vms"].values():
+            if vm.get("status") != "suspended":
+                continue
+
+            suspended_at = vm.get("suspended_at")
+            if not suspended_at:
+                continue
+
+            suspended_at = datetime.fromisoformat(
+                suspended_at.replace("Z", "+00:00")
+            )
+            grace_expires = suspended_at + timedelta(days=grace_days)
+
+            if now > grace_expires:
+                to_destroy.append(vm)
+
+        return to_destroy
 
     def allocate_ip(self) -> Optional[str]:
         db = self._read_db()
