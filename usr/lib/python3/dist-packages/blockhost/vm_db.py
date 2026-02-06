@@ -201,8 +201,17 @@ class VMDatabaseBase(ABC):
         pass
 
     @abstractmethod
-    def reserve_nft_token_id(self, vm_name: str) -> int:
-        """Reserve the next NFT token ID for a VM."""
+    def reserve_nft_token_id(self, vm_name: str, token_id: Optional[int] = None) -> int:
+        """Reserve an NFT token ID for a VM.
+
+        Args:
+            vm_name: Name of the VM to associate with the token
+            token_id: Specific token ID to reserve (from contract query).
+                      If None, auto-allocates the next sequential ID.
+
+        Returns:
+            The reserved token ID
+        """
         pass
 
     @abstractmethod
@@ -266,8 +275,7 @@ class VMDatabase(VMDatabaseBase):
                 "next_vmid": self.vmid_range["start"],
                 "allocated_ips": [],
                 "allocated_ipv6": [],
-                "next_nft_token_id": 0,
-                "nft_tokens": {},
+                "reserved_nft_tokens": {},
             })
 
     def _read_db(self) -> dict:
@@ -550,20 +558,31 @@ class VMDatabase(VMDatabaseBase):
             db["allocated_ips"].remove(ip)
             self._write_db(db)
 
-    def reserve_nft_token_id(self, vm_name: str) -> int:
-        """Reserve the next NFT token ID for a VM."""
-        db = self._read_db()
-        db.setdefault("next_nft_token_id", 0)
-        db.setdefault("nft_tokens", {})
+    def reserve_nft_token_id(self, vm_name: str, token_id: Optional[int] = None) -> int:
+        """Reserve an NFT token ID for a VM.
 
-        token_id = db["next_nft_token_id"]
-        db["next_nft_token_id"] = token_id + 1
-        db["nft_tokens"][str(token_id)] = {
-            "status": "reserved",
+        Args:
+            vm_name: Name of the VM to associate with the token
+            token_id: Specific token ID to reserve (from contract query).
+                      If None, auto-allocates the next sequential ID.
+
+        Returns:
+            The reserved token ID
+        """
+        db = self._read_db()
+        db.setdefault("reserved_nft_tokens", {})
+
+        if token_id is None:
+            # Auto-allocate: find next available ID
+            reserved = db.get("reserved_nft_tokens", {})
+            token_id = max([int(k) for k in reserved.keys()] + [-1]) + 1
+
+        # Reserve this specific token ID
+        db["reserved_nft_tokens"][str(token_id)] = {
             "vm_name": vm_name,
+            "status": "reserved",
             "reserved_at": datetime.now(timezone.utc).isoformat(),
         }
-
         self._write_db(db)
         return token_id
 
@@ -571,12 +590,12 @@ class VMDatabase(VMDatabaseBase):
         """Mark an NFT token as successfully minted."""
         db = self._read_db()
         key = str(token_id)
-        if key not in db.get("nft_tokens", {}):
+        if key not in db.get("reserved_nft_tokens", {}):
             raise ValueError(f"NFT token {token_id} not found")
 
-        db["nft_tokens"][key]["status"] = "minted"
-        db["nft_tokens"][key]["owner_wallet"] = owner_wallet
-        db["nft_tokens"][key]["minted_at"] = datetime.now(timezone.utc).isoformat()
+        db["reserved_nft_tokens"][key]["status"] = "minted"
+        db["reserved_nft_tokens"][key]["owner_wallet"] = owner_wallet
+        db["reserved_nft_tokens"][key]["minted_at"] = datetime.now(timezone.utc).isoformat()
 
         self._write_db(db)
 
@@ -584,18 +603,18 @@ class VMDatabase(VMDatabaseBase):
         """Mark an NFT token reservation as failed."""
         db = self._read_db()
         key = str(token_id)
-        if key not in db.get("nft_tokens", {}):
+        if key not in db.get("reserved_nft_tokens", {}):
             raise ValueError(f"NFT token {token_id} not found")
 
-        db["nft_tokens"][key]["status"] = "failed"
-        db["nft_tokens"][key]["failed_at"] = datetime.now(timezone.utc).isoformat()
+        db["reserved_nft_tokens"][key]["status"] = "failed"
+        db["reserved_nft_tokens"][key]["failed_at"] = datetime.now(timezone.utc).isoformat()
 
         self._write_db(db)
 
     def get_nft_token(self, token_id: int) -> Optional[dict]:
         """Get NFT token info by ID."""
         db = self._read_db()
-        return db.get("nft_tokens", {}).get(str(token_id))
+        return db.get("reserved_nft_tokens", {}).get(str(token_id))
 
 
 class MockVMDatabase(VMDatabaseBase):
@@ -639,8 +658,7 @@ class MockVMDatabase(VMDatabaseBase):
                 "next_vmid": self.vmid_range["start"],
                 "allocated_ips": [],
                 "allocated_ipv6": [],
-                "next_nft_token_id": 0,
-                "nft_tokens": {},
+                "reserved_nft_tokens": {},
             })
 
     def _read_db(self) -> dict:
@@ -879,46 +897,58 @@ class MockVMDatabase(VMDatabaseBase):
             vms = [vm for vm in vms if vm.get("status") == status]
         return vms
 
-    def reserve_nft_token_id(self, vm_name: str) -> int:
-        db = self._read_db()
-        db.setdefault("next_nft_token_id", 0)
-        db.setdefault("nft_tokens", {})
+    def reserve_nft_token_id(self, vm_name: str, token_id: Optional[int] = None) -> int:
+        """Reserve an NFT token ID for a VM.
 
-        token_id = db["next_nft_token_id"]
-        db["next_nft_token_id"] = token_id + 1
-        db["nft_tokens"][str(token_id)] = {
-            "status": "reserved",
+        Args:
+            vm_name: Name of the VM to associate with the token
+            token_id: Specific token ID to reserve (from contract query).
+                      If None, auto-allocates the next sequential ID.
+
+        Returns:
+            The reserved token ID
+        """
+        db = self._read_db()
+        db.setdefault("reserved_nft_tokens", {})
+
+        if token_id is None:
+            # Auto-allocate: find next available ID
+            reserved = db.get("reserved_nft_tokens", {})
+            token_id = max([int(k) for k in reserved.keys()] + [-1]) + 1
+
+        # Reserve this specific token ID
+        db["reserved_nft_tokens"][str(token_id)] = {
             "vm_name": vm_name,
+            "status": "reserved",
             "reserved_at": datetime.now(timezone.utc).isoformat(),
         }
-
         self._write_db(db)
         return token_id
 
     def mark_nft_minted(self, token_id: int, owner_wallet: str) -> None:
         db = self._read_db()
         key = str(token_id)
-        if key not in db.get("nft_tokens", {}):
+        if key not in db.get("reserved_nft_tokens", {}):
             raise ValueError(f"NFT token {token_id} not found")
 
-        db["nft_tokens"][key]["status"] = "minted"
-        db["nft_tokens"][key]["owner_wallet"] = owner_wallet
-        db["nft_tokens"][key]["minted_at"] = datetime.now(timezone.utc).isoformat()
+        db["reserved_nft_tokens"][key]["status"] = "minted"
+        db["reserved_nft_tokens"][key]["owner_wallet"] = owner_wallet
+        db["reserved_nft_tokens"][key]["minted_at"] = datetime.now(timezone.utc).isoformat()
         self._write_db(db)
 
     def mark_nft_failed(self, token_id: int) -> None:
         db = self._read_db()
         key = str(token_id)
-        if key not in db.get("nft_tokens", {}):
+        if key not in db.get("reserved_nft_tokens", {}):
             raise ValueError(f"NFT token {token_id} not found")
 
-        db["nft_tokens"][key]["status"] = "failed"
-        db["nft_tokens"][key]["failed_at"] = datetime.now(timezone.utc).isoformat()
+        db["reserved_nft_tokens"][key]["status"] = "failed"
+        db["reserved_nft_tokens"][key]["failed_at"] = datetime.now(timezone.utc).isoformat()
         self._write_db(db)
 
     def get_nft_token(self, token_id: int) -> Optional[dict]:
         db = self._read_db()
-        return db.get("nft_tokens", {}).get(str(token_id))
+        return db.get("reserved_nft_tokens", {}).get(str(token_id))
 
 
 def get_database(
