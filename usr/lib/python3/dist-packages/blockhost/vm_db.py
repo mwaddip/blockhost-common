@@ -142,12 +142,24 @@ class VMDatabaseBase(ABC):
         name: str,
         vmid: int,
         ip: str,
-        owner: str,
-        expiry_days: int,
+        ipv6: Optional[str] = None,
+        owner: str = "",
+        expiry_days: int = 30,
         purpose: str = "",
         wallet_address: Optional[str] = None,
     ) -> dict:
-        """Register a new VM in the database."""
+        """Register a new VM in the database.
+
+        Args:
+            name: VM name (unique identifier)
+            vmid: Proxmox VMID
+            ip: IPv4 address
+            ipv6: IPv6 address (optional)
+            owner: Owner identifier
+            expiry_days: Days until expiry
+            purpose: Purpose description
+            wallet_address: Owner's wallet address
+        """
         pass
 
     @abstractmethod
@@ -326,8 +338,9 @@ class VMDatabase(VMDatabaseBase):
         name: str,
         vmid: int,
         ip: str,
-        owner: str,
-        expiry_days: int,
+        ipv6: Optional[str] = None,
+        owner: str = "",
+        expiry_days: int = 30,
         purpose: str = "",
         wallet_address: Optional[str] = None,
     ) -> dict:
@@ -344,6 +357,7 @@ class VMDatabase(VMDatabaseBase):
             self.fields["vm_name"]: name,
             self.fields["vmid"]: vmid,
             self.fields["ip_address"]: ip,
+            "ipv6_address": ipv6,
             self.fields["expires_at"]: expires_at.isoformat(),
             self.fields["owner"]: owner,
             self.fields["status"]: "active",
@@ -354,9 +368,15 @@ class VMDatabase(VMDatabaseBase):
 
         db["vms"][name] = vm
 
-        # Track allocated IP
+        # Track allocated IPv4
         if ip not in db["allocated_ips"]:
             db["allocated_ips"].append(ip)
+
+        # Track allocated IPv6
+        if ipv6:
+            db.setdefault("allocated_ipv6", [])
+            if ipv6 not in db["allocated_ipv6"]:
+                db["allocated_ipv6"].append(ipv6)
 
         # Update next_vmid if necessary
         if vmid >= db["next_vmid"]:
@@ -697,8 +717,9 @@ class MockVMDatabase(VMDatabaseBase):
         name: str,
         vmid: int,
         ip: str,
-        owner: str,
-        expiry_days: int,
+        ipv6: Optional[str] = None,
+        owner: str = "",
+        expiry_days: int = 30,
         purpose: str = "",
         wallet_address: Optional[str] = None,
     ) -> dict:
@@ -714,6 +735,7 @@ class MockVMDatabase(VMDatabaseBase):
             "vm_name": name,
             "vmid": vmid,
             "ip_address": ip,
+            "ipv6_address": ipv6,
             "expires_at": expires_at.isoformat(),
             "owner": owner,
             "status": "active",
@@ -725,6 +747,10 @@ class MockVMDatabase(VMDatabaseBase):
         db["vms"][name] = vm
         if ip not in db["allocated_ips"]:
             db["allocated_ips"].append(ip)
+        if ipv6:
+            db.setdefault("allocated_ipv6", [])
+            if ipv6 not in db["allocated_ipv6"]:
+                db["allocated_ipv6"].append(ipv6)
         if vmid >= db["next_vmid"]:
             db["next_vmid"] = vmid + 1
 
