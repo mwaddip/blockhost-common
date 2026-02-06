@@ -155,7 +155,7 @@ def load_blockhost_config(fallback_dir: Optional[Path] = None) -> dict:
 
     Returns:
         Configuration dictionary with keys:
-        - decrypt_message: Static message for encryption key derivation
+        - public_secret: Static message for encryption key derivation
         - server_public_key: Server's secp256k1 public key
         - deployer_address: Ethereum address of the deployer wallet
         - contract_address: Deployed subscription contract address

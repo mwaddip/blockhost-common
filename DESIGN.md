@@ -102,7 +102,7 @@ Contains blockchain settings:
 **Owner:** `blockhost-engine` (created by init-server.sh)
 
 Contains server-specific settings:
-- `decrypt_message` - Message users sign
+- `public_secret` - Message users sign
 - `server_public_key` - For encryption
 - `deployer_address` - Ethereum address
 - `contract_address` - After deployment
