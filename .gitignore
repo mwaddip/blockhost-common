@@ -4,3 +4,4 @@ __pycache__/
 *.deb
 *.build
 *.changes
+SPECIAL.md
