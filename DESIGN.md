@@ -80,10 +80,12 @@ blockhost-engine (populates configs via init-server.sh)
 Contains VM provisioning settings:
 - `terraform_dir` - Where Terraform runs
 - `db_file` - Path to vms.json
-- `ip_pool` - IP allocation range
-- `vmid_range` - Proxmox VMID range
+- `fields` - Field name mappings (optional, for backend migration)
+- `ip_pool` - IPv4 allocation range (network, start, end, gateway)
+- `ipv6_pool` - IPv6 allocation range (start, end offsets within prefix)
+- `vmid_range` - Proxmox VMID range (also accepts `vmid_pool`)
 - `default_expiry_days` - Default VM lifetime
-- `gc_grace_days` - Grace period before GC
+- `gc_grace_days` - Grace period before GC destroys suspended VMs
 
 ### web3-defaults.yaml
 
@@ -123,7 +125,7 @@ from blockhost.config import (
     load_config,          # Load any YAML config
     load_db_config,       # Load db.yaml
     load_web3_config,     # Load web3-defaults.yaml
-    load_blockhost_config,# Load blockhost.yaml
+    load_broker_allocation, # Load broker-allocation.json (IPv6 prefix)
 
     # Utilities
     get_db_file_path,     # Get vms.json path from config
@@ -145,11 +147,34 @@ from blockhost.vm_db import (
 
 # Usage
 db = get_database()
+
+# Resource allocation
 vmid = db.allocate_vmid()
 ip = db.allocate_ip()
-vm = db.register_vm(name="web-001", vmid=vmid, ip=ip, ...)
-token_id = db.reserve_nft_token_id("web-001")
+ipv6 = db.allocate_ipv6()  # Returns None if broker not configured
+
+# VM registration
+vm = db.register_vm(
+    name="web-001",
+    vmid=vmid,
+    ip=ip,
+    ipv6=ipv6,            # Optional IPv6 address
+    owner="user",
+    expiry_days=30,
+)
+
+# NFT token management
+token_id = db.reserve_nft_token_id("web-001", token_id=5)  # Or auto-allocate if None
 db.mark_nft_minted(token_id, "0x...")
+
+# VM lifecycle (two-phase garbage collection)
+db.mark_suspended("web-001")       # Phase 1: suspend expired VM
+db.mark_active("web-001")          # Reactivate if user renews
+db.mark_destroyed("web-001")       # Phase 2: destroy after grace period
+
+# GC queries
+to_suspend = db.get_vms_to_suspend()           # Active VMs past expiry
+to_destroy = db.get_vms_to_destroy(grace_days=7)  # Suspended past grace
 ```
 
 ## Migration Guide
