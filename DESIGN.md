@@ -7,6 +7,7 @@
 1. **Directory structure** - Standard locations for config and data files
 2. **Configuration templates** - Default config files with sensible placeholders
 3. **Python library** - Shared modules for config loading and VM database access
+4. **Root agent daemon** - Privileged operations service (systemd-managed, Unix socket IPC)
 
 This package resolves circular dependencies between `proxmox-terraform` (now `blockhost-provisioner`) and `blockhost-engine` by establishing a common foundation they both depend on.
 
@@ -61,6 +62,12 @@ blockhost-engine (populates configs via init-server.sh)
 ├── config.py                       # Path constants, config loading
 ├── root_agent.py                   # Root agent daemon client
 └── vm_db.py                        # VM database abstraction
+
+/usr/share/blockhost/root-agent/
+└── blockhost_root_agent.py         # Root agent daemon (runs as root)
+
+/etc/systemd/system/
+└── blockhost-root-agent.service    # Systemd unit for root agent daemon
 ```
 
 ### Created by blockhost-engine init

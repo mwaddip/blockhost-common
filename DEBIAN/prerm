@@ -1,9 +1,10 @@
 #!/bin/bash
-# Pre-removal script for blockhost-common
-
 set -e
 
-# Nothing to do before removal - directories are managed by dpkg
+if [ "$1" = "remove" ] || [ "$1" = "upgrade" ]; then
+    systemctl stop blockhost-root-agent 2>/dev/null || true
+    systemctl disable blockhost-root-agent 2>/dev/null || true
+fi
 
 #DEBHELPER#
 

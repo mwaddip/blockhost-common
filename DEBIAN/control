@@ -14,3 +14,4 @@ Description: Common configuration and libraries for Blockhost
   - /etc/blockhost/ directory structure
   - Configuration file templates (db.yaml, web3-defaults.yaml)
   - Python blockhost module with config loading and VM database
+  - Root agent daemon (privileged operations via Unix socket)

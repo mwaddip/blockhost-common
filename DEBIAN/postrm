@@ -5,6 +5,10 @@ set -e
 
 case "$1" in
     purge)
+        # Remove systemd service
+        rm -f /etc/systemd/system/blockhost-root-agent.service
+        systemctl daemon-reload 2>/dev/null || true
+
         # Remove configuration directory on purge
         if [ -d /etc/blockhost ]; then
             rm -rf /etc/blockhost

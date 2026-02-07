@@ -27,6 +27,13 @@ echo "blockhost-common: Directories and permissions configured"
 echo "  Config dir: /etc/blockhost/ (root:blockhost 750)"
 echo "  Data dir:   /var/lib/blockhost/ (root:blockhost 750)"
 
+# Enable and start root agent service
+systemctl daemon-reload
+systemctl enable blockhost-root-agent
+if systemctl is-system-running --quiet 2>/dev/null; then
+    systemctl start blockhost-root-agent || true
+fi
+
 #DEBHELPER#
 
 exit 0

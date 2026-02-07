@@ -18,6 +18,16 @@ sudo dpkg -i ../blockhost-common_0.1.0_all.deb
 
 - `/etc/blockhost/` - Configuration files
 - `/var/lib/blockhost/` - Runtime data (VM database)
+- `/usr/share/blockhost/root-agent/` - Root agent daemon
+
+### Systemd Service
+
+The package ships a `blockhost-root-agent.service` that runs the privileged operations daemon. It is enabled and started automatically on install.
+
+```bash
+systemctl status blockhost-root-agent
+journalctl -u blockhost-root-agent
+```
 
 ### Configuration Files
 
