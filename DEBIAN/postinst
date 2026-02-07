@@ -8,12 +8,24 @@ if ! getent group blockhost > /dev/null 2>&1; then
     addgroup --system blockhost
 fi
 
+# Create blockhost user if it doesn't exist
+if ! id -u blockhost > /dev/null 2>&1; then
+    adduser --system --gid blockhost \
+        --home /var/lib/blockhost \
+        --shell /usr/sbin/nologin \
+        --no-create-home blockhost
+fi
+
 # Set directory permissions
 chown root:blockhost /etc/blockhost
 chmod 750 /etc/blockhost
 
-chown root:blockhost /var/lib/blockhost
+chown blockhost:blockhost /var/lib/blockhost
 chmod 750 /var/lib/blockhost
+
+if [ -d /var/lib/blockhost/terraform ]; then
+    chown -R blockhost:blockhost /var/lib/blockhost/terraform
+fi
 
 # Config files should be readable by blockhost group
 for conf in /etc/blockhost/*.yaml; do
@@ -25,7 +37,7 @@ done
 
 echo "blockhost-common: Directories and permissions configured"
 echo "  Config dir: /etc/blockhost/ (root:blockhost 750)"
-echo "  Data dir:   /var/lib/blockhost/ (root:blockhost 750)"
+echo "  Data dir:   /var/lib/blockhost/ (blockhost:blockhost 750)"
 
 # Enable and start root agent service
 systemctl daemon-reload

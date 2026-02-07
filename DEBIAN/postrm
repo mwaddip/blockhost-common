@@ -20,6 +20,11 @@ case "$1" in
             rm -rf /var/lib/blockhost
         fi
 
+        # Remove blockhost user if it exists
+        if id -u blockhost > /dev/null 2>&1; then
+            deluser blockhost 2>/dev/null || true
+        fi
+
         # Remove blockhost group if no users remain
         if getent group blockhost > /dev/null 2>&1; then
             delgroup --only-if-empty blockhost 2>/dev/null || true

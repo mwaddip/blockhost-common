@@ -14,10 +14,16 @@ sudo dpkg -i ../blockhost-common_0.1.0_all.deb
 
 ## What's Included
 
+### System User and Group
+
+The package creates a `blockhost` system group and user on install:
+- Group `blockhost` — shared by all Blockhost services
+- User `blockhost` — system account, no login shell, home `/var/lib/blockhost`
+
 ### Directory Structure
 
-- `/etc/blockhost/` - Configuration files
-- `/var/lib/blockhost/` - Runtime data (VM database)
+- `/etc/blockhost/` - Configuration files (root:blockhost 750)
+- `/var/lib/blockhost/` - Runtime data, VM database (blockhost:blockhost 750)
 - `/usr/share/blockhost/root-agent/` - Root agent daemon
 
 ### Systemd Service

@@ -53,7 +53,7 @@ blockhost-engine (populates configs via init-server.sh)
 ├── db.yaml                         # VM database settings
 └── web3-defaults.yaml              # Blockchain/NFT settings
 
-/var/lib/blockhost/                 # Data directory (750 root:blockhost)
+/var/lib/blockhost/                 # Data directory (750 blockhost:blockhost)
 ├── vms.json                        # VM database (created at runtime)
 └── terraform/                      # Terraform working directory
 
@@ -310,13 +310,15 @@ Protocol: 4-byte big-endian length prefix + JSON payload over Unix socket at `/r
 - `BLOCKHOST_DEV` env var for explicit mode
 - `get_config_path()` handles fallback automatically
 
-### 5. Group permissions
+### 5. System user and group permissions
 
-**Decision:** Use `blockhost` group with 750/640 permissions.
+**Decision:** Create `blockhost` system user and group; use 750/640 permissions.
 
 **Rationale:**
+- `blockhost` system user owns `/var/lib/blockhost/` (data directory)
+- `blockhost` group shared across all services for config access
+- `/etc/blockhost/` remains root-owned (root:blockhost) — services read, only root writes
 - Services can run as unprivileged users
-- Add service users to blockhost group
 - Key files remain 600 root:root
 
 ## Build Instructions
