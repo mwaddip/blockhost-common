@@ -10,7 +10,7 @@ fi
 
 # Create blockhost user if it doesn't exist
 if ! id -u blockhost > /dev/null 2>&1; then
-    adduser --system --gid blockhost \
+    adduser --system --ingroup blockhost \
         --home /var/lib/blockhost \
         --shell /usr/sbin/nologin \
         --no-create-home blockhost
