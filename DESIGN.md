@@ -59,6 +59,7 @@ blockhost-engine (populates configs via init-server.sh)
 /usr/lib/python3/dist-packages/blockhost/
 ├── __init__.py                     # Package exports
 ├── config.py                       # Path constants, config loading
+├── root_agent.py                   # Root agent daemon client
 └── vm_db.py                        # VM database abstraction
 ```
 
@@ -176,6 +177,34 @@ db.mark_destroyed("web-001")       # Phase 2: destroy after grace period
 to_suspend = db.get_vms_to_suspend()           # Active VMs past expiry
 to_destroy = db.get_vms_to_destroy(grace_days=7)  # Suspended past grace
 ```
+
+### blockhost.root_agent
+
+```python
+from blockhost.root_agent import (
+    call,                 # Send arbitrary command to root agent
+    qm_start,            # Start a VM
+    qm_stop,             # Stop a VM (immediate)
+    qm_shutdown,         # Graceful shutdown
+    qm_destroy,          # Destroy a VM
+    ip6_route_add,       # Add IPv6 route
+    ip6_route_del,       # Remove IPv6 route
+    generate_wallet,     # Generate a new wallet
+    addressbook_save,    # Save addressbook entries
+    RootAgentError,      # Error returned by daemon
+    RootAgentConnectionError,  # Cannot connect to socket
+)
+
+# Usage
+qm_start(100)
+ip6_route_add("2001:db8::1/128", "vmbr0")
+result = generate_wallet("hot")  # {"ok": true, "address": "0x..."}
+
+# Custom command
+call("my-action", timeout=60, key="value")
+```
+
+Protocol: 4-byte big-endian length prefix + JSON payload over Unix socket at `/run/blockhost/root-agent.sock`.
 
 ## Migration Guide
 

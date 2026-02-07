@@ -26,6 +26,13 @@ from .config import (
     load_broker_allocation,
 )
 from .vm_db import get_database, VMDatabase, MockVMDatabase, VMDatabaseBase
+from .root_agent import (
+    call as root_agent_call,
+    qm_start, qm_stop, qm_shutdown, qm_destroy,
+    ip6_route_add, ip6_route_del,
+    generate_wallet, addressbook_save,
+    RootAgentError, RootAgentConnectionError,
+)
 
 __all__ = [
     # Version
@@ -45,4 +52,16 @@ __all__ = [
     "VMDatabase",
     "MockVMDatabase",
     "VMDatabaseBase",
+    # Root agent client
+    "root_agent_call",
+    "qm_start",
+    "qm_stop",
+    "qm_shutdown",
+    "qm_destroy",
+    "ip6_route_add",
+    "ip6_route_del",
+    "generate_wallet",
+    "addressbook_save",
+    "RootAgentError",
+    "RootAgentConnectionError",
 ]

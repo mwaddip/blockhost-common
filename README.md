@@ -29,6 +29,7 @@ sudo dpkg -i ../blockhost-common_0.1.0_all.deb
 ```python
 from blockhost.config import load_db_config, load_web3_config
 from blockhost.vm_db import get_database
+from blockhost.root_agent import qm_start, generate_wallet
 
 # Load configuration
 db_config = load_db_config()
@@ -37,6 +38,10 @@ web3_config = load_web3_config()
 # Access VM database
 db = get_database()
 vmid = db.allocate_vmid()
+
+# Call root agent daemon (requires root-agent.sock)
+qm_start(vmid)
+wallet = generate_wallet("hot")
 ```
 
 ## Development
