@@ -36,7 +36,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from .config import load_db_config, load_broker_allocation, DATA_DIR
+from .config import load_db_config, load_broker_allocation
 
 
 # Default field mappings
@@ -124,189 +124,21 @@ def _normalize_config(config: dict) -> dict:
 
 
 class VMDatabaseBase(ABC):
-    """Abstract base class for VM database implementations."""
+    """Base class for VM database implementations.
+
+    Subclasses must implement __init__, _read_db, and _write_db.
+    All business logic lives here; subclasses only control storage.
+    """
 
     @abstractmethod
-    def get_expired_vms(self, grace_days: int = 0) -> list[dict]:
-        """Get all VMs past their expiry date (plus optional grace period)."""
-        pass
-
-    @abstractmethod
-    def get_vm(self, name: str) -> Optional[dict]:
-        """Get a VM by name."""
-        pass
-
-    @abstractmethod
-    def register_vm(
-        self,
-        name: str,
-        vmid: int,
-        ip: str,
-        ipv6: Optional[str] = None,
-        owner: str = "",
-        expiry_days: int = 30,
-        purpose: str = "",
-        wallet_address: Optional[str] = None,
-    ) -> dict:
-        """Register a new VM in the database.
-
-        Args:
-            name: VM name (unique identifier)
-            vmid: Proxmox VMID
-            ip: IPv4 address
-            ipv6: IPv6 address (optional)
-            owner: Owner identifier
-            expiry_days: Days until expiry
-            purpose: Purpose description
-            wallet_address: Owner's wallet address
-        """
-        pass
-
-    @abstractmethod
-    def mark_suspended(self, name: str) -> None:
-        """Mark a VM as suspended (Phase 1 of garbage collection)."""
-        pass
-
-    @abstractmethod
-    def mark_active(self, name: str, new_expiry: Optional[datetime] = None) -> None:
-        """Mark a VM as active (reactivate a suspended VM)."""
-        pass
-
-    @abstractmethod
-    def mark_destroyed(self, name: str) -> None:
-        """Mark a VM as destroyed (Phase 2 of garbage collection)."""
-        pass
-
-    @abstractmethod
-    def get_vms_to_suspend(self) -> list[dict]:
-        """Get active VMs that have expired and are ready for suspension."""
-        pass
-
-    @abstractmethod
-    def get_vms_to_destroy(self, grace_days: int) -> list[dict]:
-        """Get suspended VMs past grace period that are ready for destruction."""
-        pass
-
-    @abstractmethod
-    def allocate_ip(self) -> Optional[str]:
-        """Allocate the next available IPv4 address."""
-        pass
-
-    @abstractmethod
-    def allocate_ipv6(self) -> Optional[str]:
-        """Allocate the next available IPv6 address."""
-        pass
-
-    @abstractmethod
-    def allocate_vmid(self) -> int:
-        """Allocate the next available VMID."""
-        pass
-
-    @abstractmethod
-    def extend_expiry(self, name: str, days: int) -> None:
-        """Extend a VM's expiry date by the specified number of days."""
-        pass
-
-    @abstractmethod
-    def list_vms(self, status: Optional[str] = None) -> list[dict]:
-        """List all VMs, optionally filtered by status."""
-        pass
-
-    @abstractmethod
-    def reserve_nft_token_id(self, vm_name: str, token_id: Optional[int] = None) -> int:
-        """Reserve an NFT token ID for a VM.
-
-        Args:
-            vm_name: Name of the VM to associate with the token
-            token_id: Specific token ID to reserve (from contract query).
-                      If None, auto-allocates the next sequential ID.
-
-        Returns:
-            The reserved token ID
-        """
-        pass
-
-    @abstractmethod
-    def mark_nft_minted(self, token_id: int, owner_wallet: str) -> None:
-        """Mark an NFT token as successfully minted."""
-        pass
-
-    @abstractmethod
-    def mark_nft_failed(self, token_id: int) -> None:
-        """Mark an NFT token reservation as failed."""
-        pass
-
-    @abstractmethod
-    def get_nft_token(self, token_id: int) -> Optional[dict]:
-        """Get NFT token info by ID."""
-        pass
-
-
-class VMDatabase(VMDatabaseBase):
-    """JSON file-based VM database implementation."""
-
-    def __init__(
-        self,
-        config_path: Optional[str] = None,
-        fallback_dir: Optional[Path] = None,
-    ):
-        """
-        Initialize the database.
-
-        Args:
-            config_path: Path to db.yaml config file. If None, uses default location.
-            fallback_dir: Optional fallback directory for config file lookup.
-        """
-        if config_path is not None:
-            import yaml
-            with open(config_path) as f:
-                raw_config = yaml.safe_load(f)
-        else:
-            raw_config = load_db_config(fallback_dir)
-
-        # Normalize config to handle various formats
-        self.config = _normalize_config(raw_config)
-
-        self.db_file = Path(self.config["db_file"])
-        self.fields = self.config["fields"]
-        self.ip_pool = self.config["ip_pool"]
-        self.vmid_range = self.config["vmid_range"]
-        self.ipv6_pool = self.config.get("ipv6_pool", {"start": 2, "end": 254})
-
-        # Load broker allocation for IPv6 prefix (may be None if not configured)
-        broker_allocation = load_broker_allocation(fallback_dir)
-        self.ipv6_prefix = broker_allocation.get("prefix") if broker_allocation else None
-
-        # Ensure database directory exists
-        self.db_file.parent.mkdir(parents=True, exist_ok=True)
-
-        # Initialize empty database if it doesn't exist
-        if not self.db_file.exists():
-            self._write_db({
-                "vms": {},
-                "next_vmid": self.vmid_range["start"],
-                "allocated_ips": [],
-                "allocated_ipv6": [],
-                "reserved_nft_tokens": {},
-            })
-
     def _read_db(self) -> dict:
-        """Read the database file with shared lock."""
-        with open(self.db_file, "r") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
-            try:
-                return json.load(f)
-            finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        """Read and return the database contents."""
+        pass
 
+    @abstractmethod
     def _write_db(self, data: dict) -> None:
-        """Write to the database file with exclusive lock."""
-        with open(self.db_file, "w") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            try:
-                json.dump(data, f, indent=2, default=str)
-            finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        """Write data to the database."""
+        pass
 
     def get_expired_vms(self, grace_days: int = 0) -> list[dict]:
         """Get all VMs past their expiry date (plus optional grace period)."""
@@ -344,7 +176,18 @@ class VMDatabase(VMDatabaseBase):
         purpose: str = "",
         wallet_address: Optional[str] = None,
     ) -> dict:
-        """Register a new VM in the database."""
+        """Register a new VM in the database.
+
+        Args:
+            name: VM name (unique identifier)
+            vmid: Proxmox VMID
+            ip: IPv4 address
+            ipv6: IPv6 address (optional)
+            owner: Owner identifier
+            expiry_days: Days until expiry
+            purpose: Purpose description
+            wallet_address: Owner's wallet address
+        """
         db = self._read_db()
 
         if name in db["vms"]:
@@ -526,13 +369,6 @@ class VMDatabase(VMDatabaseBase):
 
         return None  # Pool exhausted
 
-    def release_ipv6(self, ipv6: str) -> None:
-        """Release an IPv6 address back to the pool."""
-        db = self._read_db()
-        if ipv6 in db.get("allocated_ipv6", []):
-            db["allocated_ipv6"].remove(ipv6)
-            self._write_db(db)
-
     def allocate_vmid(self) -> int:
         """Allocate the next available VMID."""
         db = self._read_db()
@@ -570,13 +406,6 @@ class VMDatabase(VMDatabaseBase):
             vms = [vm for vm in vms if vm.get("status") == status]
 
         return vms
-
-    def release_ip(self, ip: str) -> None:
-        """Release an IP address back to the pool."""
-        db = self._read_db()
-        if ip in db["allocated_ips"]:
-            db["allocated_ips"].remove(ip)
-            self._write_db(db)
 
     def reserve_nft_token_id(self, vm_name: str, token_id: Optional[int] = None) -> int:
         """Reserve an NFT token ID for a VM.
@@ -637,8 +466,89 @@ class VMDatabase(VMDatabaseBase):
         return db.get("reserved_nft_tokens", {}).get(str(token_id))
 
 
+class VMDatabase(VMDatabaseBase):
+    """JSON file-based VM database with fcntl file locking."""
+
+    def __init__(
+        self,
+        config_path: Optional[str] = None,
+        fallback_dir: Optional[Path] = None,
+    ):
+        """
+        Initialize the database.
+
+        Args:
+            config_path: Path to db.yaml config file. If None, uses default location.
+            fallback_dir: Optional fallback directory for config file lookup.
+        """
+        if config_path is not None:
+            import yaml
+            with open(config_path) as f:
+                raw_config = yaml.safe_load(f)
+        else:
+            raw_config = load_db_config(fallback_dir)
+
+        # Normalize config to handle various formats
+        self.config = _normalize_config(raw_config)
+
+        self.db_file = Path(self.config["db_file"])
+        self.fields = self.config["fields"]
+        self.ip_pool = self.config["ip_pool"]
+        self.vmid_range = self.config["vmid_range"]
+        self.ipv6_pool = self.config.get("ipv6_pool", {"start": 2, "end": 254})
+
+        # Load broker allocation for IPv6 prefix (may be None if not configured)
+        broker_allocation = load_broker_allocation(fallback_dir)
+        self.ipv6_prefix = broker_allocation.get("prefix") if broker_allocation else None
+
+        # Ensure database directory exists
+        self.db_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Initialize empty database if it doesn't exist
+        if not self.db_file.exists():
+            self._write_db({
+                "vms": {},
+                "next_vmid": self.vmid_range["start"],
+                "allocated_ips": [],
+                "allocated_ipv6": [],
+                "reserved_nft_tokens": {},
+            })
+
+    def _read_db(self) -> dict:
+        """Read the database file with shared lock."""
+        with open(self.db_file, "r") as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+            try:
+                return json.load(f)
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+    def _write_db(self, data: dict) -> None:
+        """Write to the database file with exclusive lock."""
+        with open(self.db_file, "w") as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                json.dump(data, f, indent=2, default=str)
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+    def release_ip(self, ip: str) -> None:
+        """Release an IP address back to the pool."""
+        db = self._read_db()
+        if ip in db["allocated_ips"]:
+            db["allocated_ips"].remove(ip)
+            self._write_db(db)
+
+    def release_ipv6(self, ipv6: str) -> None:
+        """Release an IPv6 address back to the pool."""
+        db = self._read_db()
+        if ipv6 in db.get("allocated_ipv6", []):
+            db["allocated_ipv6"].remove(ipv6)
+            self._write_db(db)
+
+
 class MockVMDatabase(VMDatabaseBase):
-    """Mock database for local development/testing."""
+    """Mock database for local development/testing (no file locking)."""
 
     def __init__(
         self,
@@ -652,7 +562,7 @@ class MockVMDatabase(VMDatabaseBase):
         Args:
             db_file: Path to mock database file
             fallback_dir: Fallback directory for config lookup
-            mock_ipv6_prefix: Mock IPv6 prefix for testing (default: fd00:mock:test::/120)
+            mock_ipv6_prefix: Mock IPv6 prefix for testing (default: fd00::/120)
         """
         if db_file is None:
             db_file = Path.cwd() / "mock-db.json"
@@ -661,6 +571,7 @@ class MockVMDatabase(VMDatabaseBase):
         # Load and normalize config for IP pool settings
         raw_config = load_db_config(fallback_dir)
         self.config = _normalize_config(raw_config)
+        self.fields = self.config["fields"]
         self.ip_pool = self.config["ip_pool"]
         self.vmid_range = self.config["vmid_range"]
         self.ipv6_pool = self.config.get("ipv6_pool", {"start": 2, "end": 254})
@@ -688,293 +599,6 @@ class MockVMDatabase(VMDatabaseBase):
     def _write_db(self, data: dict) -> None:
         with open(self.db_file, "w") as f:
             json.dump(data, f, indent=2, default=str)
-
-    def get_expired_vms(self, grace_days: int = 0) -> list[dict]:
-        db = self._read_db()
-        now = datetime.now(timezone.utc)
-        expired = []
-
-        for vm in db["vms"].values():
-            if vm.get("status") != "active":
-                continue
-
-            expires_at = datetime.fromisoformat(
-                vm["expires_at"].replace("Z", "+00:00")
-            )
-            expiry_with_grace = expires_at + timedelta(days=grace_days)
-
-            if now > expiry_with_grace:
-                expired.append(vm)
-
-        return expired
-
-    def get_vm(self, name: str) -> Optional[dict]:
-        db = self._read_db()
-        return db["vms"].get(name)
-
-    def register_vm(
-        self,
-        name: str,
-        vmid: int,
-        ip: str,
-        ipv6: Optional[str] = None,
-        owner: str = "",
-        expiry_days: int = 30,
-        purpose: str = "",
-        wallet_address: Optional[str] = None,
-    ) -> dict:
-        db = self._read_db()
-
-        if name in db["vms"]:
-            raise ValueError(f"VM '{name}' already exists")
-
-        now = datetime.now(timezone.utc)
-        expires_at = now + timedelta(days=expiry_days)
-
-        vm = {
-            "vm_name": name,
-            "vmid": vmid,
-            "ip_address": ip,
-            "ipv6_address": ipv6,
-            "expires_at": expires_at.isoformat(),
-            "owner": owner,
-            "status": "active",
-            "created_at": now.isoformat(),
-            "purpose": purpose,
-            "wallet_address": wallet_address,
-        }
-
-        db["vms"][name] = vm
-        if ip not in db["allocated_ips"]:
-            db["allocated_ips"].append(ip)
-        if ipv6:
-            db.setdefault("allocated_ipv6", [])
-            if ipv6 not in db["allocated_ipv6"]:
-                db["allocated_ipv6"].append(ipv6)
-        if vmid >= db["next_vmid"]:
-            db["next_vmid"] = vmid + 1
-
-        self._write_db(db)
-        return vm
-
-    def mark_suspended(self, name: str) -> None:
-        """Mark a VM as suspended (Phase 1 of garbage collection)."""
-        db = self._read_db()
-
-        if name not in db["vms"]:
-            raise ValueError(f"VM '{name}' not found")
-
-        vm = db["vms"][name]
-        vm["status"] = "suspended"
-        vm["suspended_at"] = datetime.now(timezone.utc).isoformat()
-
-        self._write_db(db)
-
-    def mark_active(self, name: str, new_expiry: Optional[datetime] = None) -> None:
-        """Mark a VM as active (reactivate a suspended VM)."""
-        db = self._read_db()
-
-        if name not in db["vms"]:
-            raise ValueError(f"VM '{name}' not found")
-
-        vm = db["vms"][name]
-        vm["status"] = "active"
-
-        # Clear suspended_at
-        if "suspended_at" in vm:
-            del vm["suspended_at"]
-
-        # Update expiry if provided
-        if new_expiry is not None:
-            vm["expires_at"] = new_expiry.isoformat()
-
-        self._write_db(db)
-
-    def mark_destroyed(self, name: str) -> None:
-        """Mark a VM as destroyed and release its IPs (Phase 2 of garbage collection)."""
-        db = self._read_db()
-        if name not in db["vms"]:
-            raise ValueError(f"VM '{name}' not found")
-
-        vm = db["vms"][name]
-        vm["status"] = "destroyed"
-        vm["destroyed_at"] = datetime.now(timezone.utc).isoformat()
-
-        # Release IPv4
-        ip = vm.get("ip_address")
-        if ip and ip in db["allocated_ips"]:
-            db["allocated_ips"].remove(ip)
-
-        # Release IPv6
-        ipv6 = vm.get("ipv6_address")
-        if ipv6 and ipv6 in db.get("allocated_ipv6", []):
-            db["allocated_ipv6"].remove(ipv6)
-
-        self._write_db(db)
-
-    def get_vms_to_suspend(self) -> list[dict]:
-        """Get active VMs that have expired and are ready for suspension."""
-        db = self._read_db()
-        now = datetime.now(timezone.utc)
-        to_suspend = []
-
-        for vm in db["vms"].values():
-            if vm.get("status") != "active":
-                continue
-
-            expires_at = datetime.fromisoformat(
-                vm["expires_at"].replace("Z", "+00:00")
-            )
-
-            if now > expires_at:
-                to_suspend.append(vm)
-
-        return to_suspend
-
-    def get_vms_to_destroy(self, grace_days: int) -> list[dict]:
-        """Get suspended VMs past grace period that are ready for destruction."""
-        db = self._read_db()
-        now = datetime.now(timezone.utc)
-        to_destroy = []
-
-        for vm in db["vms"].values():
-            if vm.get("status") != "suspended":
-                continue
-
-            suspended_at = vm.get("suspended_at")
-            if not suspended_at:
-                continue
-
-            suspended_at = datetime.fromisoformat(
-                suspended_at.replace("Z", "+00:00")
-            )
-            grace_expires = suspended_at + timedelta(days=grace_days)
-
-            if now > grace_expires:
-                to_destroy.append(vm)
-
-        return to_destroy
-
-    def allocate_ip(self) -> Optional[str]:
-        db = self._read_db()
-        network_prefix = ".".join(self.ip_pool["network"].split(".")[:3])
-        start = self.ip_pool["start"]
-        end = self.ip_pool["end"]
-
-        for i in range(start, end + 1):
-            ip = f"{network_prefix}.{i}"
-            if ip not in db["allocated_ips"]:
-                db["allocated_ips"].append(ip)
-                self._write_db(db)
-                return ip
-        return None
-
-    def allocate_ipv6(self) -> Optional[str]:
-        """Allocate the next available IPv6 address from the pool."""
-        if not self.ipv6_prefix:
-            return None  # IPv6 not configured
-
-        import ipaddress
-        db = self._read_db()
-        db.setdefault("allocated_ipv6", [])
-
-        # Parse prefix to get network base
-        network = ipaddress.IPv6Network(self.ipv6_prefix, strict=False)
-        base = int(network.network_address)
-
-        start = self.ipv6_pool.get("start", 2)
-        end = self.ipv6_pool.get("end", 254)
-
-        for i in range(start, end + 1):
-            ipv6 = str(ipaddress.IPv6Address(base + i))
-            if ipv6 not in db["allocated_ipv6"]:
-                db["allocated_ipv6"].append(ipv6)
-                self._write_db(db)
-                return ipv6
-
-        return None  # Pool exhausted
-
-    def allocate_vmid(self) -> int:
-        db = self._read_db()
-        vmid = db["next_vmid"]
-        if vmid > self.vmid_range["end"]:
-            raise ValueError("VMID range exhausted")
-        db["next_vmid"] = vmid + 1
-        self._write_db(db)
-        return vmid
-
-    def extend_expiry(self, name: str, days: int) -> None:
-        db = self._read_db()
-        if name not in db["vms"]:
-            raise ValueError(f"VM '{name}' not found")
-
-        vm = db["vms"][name]
-        current_expiry = datetime.fromisoformat(
-            vm["expires_at"].replace("Z", "+00:00")
-        )
-        new_expiry = current_expiry + timedelta(days=days)
-        vm["expires_at"] = new_expiry.isoformat()
-        self._write_db(db)
-
-    def list_vms(self, status: Optional[str] = None) -> list[dict]:
-        db = self._read_db()
-        vms = list(db["vms"].values())
-        if status:
-            vms = [vm for vm in vms if vm.get("status") == status]
-        return vms
-
-    def reserve_nft_token_id(self, vm_name: str, token_id: Optional[int] = None) -> int:
-        """Reserve an NFT token ID for a VM.
-
-        Args:
-            vm_name: Name of the VM to associate with the token
-            token_id: Specific token ID to reserve (from contract query).
-                      If None, auto-allocates the next sequential ID.
-
-        Returns:
-            The reserved token ID
-        """
-        db = self._read_db()
-        db.setdefault("reserved_nft_tokens", {})
-
-        if token_id is None:
-            # Auto-allocate: find next available ID
-            reserved = db.get("reserved_nft_tokens", {})
-            token_id = max([int(k) for k in reserved.keys()] + [-1]) + 1
-
-        # Reserve this specific token ID
-        db["reserved_nft_tokens"][str(token_id)] = {
-            "vm_name": vm_name,
-            "status": "reserved",
-            "reserved_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self._write_db(db)
-        return token_id
-
-    def mark_nft_minted(self, token_id: int, owner_wallet: str) -> None:
-        db = self._read_db()
-        key = str(token_id)
-        if key not in db.get("reserved_nft_tokens", {}):
-            raise ValueError(f"NFT token {token_id} not found")
-
-        db["reserved_nft_tokens"][key]["status"] = "minted"
-        db["reserved_nft_tokens"][key]["owner_wallet"] = owner_wallet
-        db["reserved_nft_tokens"][key]["minted_at"] = datetime.now(timezone.utc).isoformat()
-        self._write_db(db)
-
-    def mark_nft_failed(self, token_id: int) -> None:
-        db = self._read_db()
-        key = str(token_id)
-        if key not in db.get("reserved_nft_tokens", {}):
-            raise ValueError(f"NFT token {token_id} not found")
-
-        db["reserved_nft_tokens"][key]["status"] = "failed"
-        db["reserved_nft_tokens"][key]["failed_at"] = datetime.now(timezone.utc).isoformat()
-        self._write_db(db)
-
-    def get_nft_token(self, token_id: int) -> Optional[dict]:
-        db = self._read_db()
-        return db.get("reserved_nft_tokens", {}).get(str(token_id))
 
 
 def get_database(

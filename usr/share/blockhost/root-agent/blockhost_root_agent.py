@@ -89,33 +89,10 @@ def _run(cmd, timeout=120):
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
-def handle_qm_start(params):
+def _handle_qm_simple(params, subcommand, extra_args=(), timeout=120):
+    """Handle simple qm commands that only need a validated VMID."""
     vmid = _validate_vmid(params['vmid'])
-    rc, out, err = _run(['qm', 'start', str(vmid)])
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    return {'ok': True, 'output': out}
-
-
-def handle_qm_stop(params):
-    vmid = _validate_vmid(params['vmid'])
-    rc, out, err = _run(['qm', 'stop', str(vmid)])
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    return {'ok': True, 'output': out}
-
-
-def handle_qm_shutdown(params):
-    vmid = _validate_vmid(params['vmid'])
-    rc, out, err = _run(['qm', 'shutdown', str(vmid)], timeout=300)
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    return {'ok': True, 'output': out}
-
-
-def handle_qm_destroy(params):
-    vmid = _validate_vmid(params['vmid'])
-    rc, out, err = _run(['qm', 'destroy', str(vmid), '--purge'])
+    rc, out, err = _run(['qm', subcommand, str(vmid)] + list(extra_args), timeout=timeout)
     if rc != 0:
         return {'ok': False, 'error': err or out}
     return {'ok': True, 'output': out}
@@ -132,12 +109,11 @@ def handle_qm_create(params):
     i = 0
     while i < len(args):
         arg = str(args[i])
-        if arg.startswith('--'):
-            if arg not in QM_CREATE_ALLOWED_ARGS:
-                return {'ok': False, 'error': f'Disallowed arg: {arg}'}
-            i += 2
-        else:
-            i += 1
+        if not arg.startswith('--'):
+            return {'ok': False, 'error': f'Unexpected positional arg: {arg}'}
+        if arg not in QM_CREATE_ALLOWED_ARGS:
+            return {'ok': False, 'error': f'Disallowed arg: {arg}'}
+        i += 2
     cmd = ['qm', 'create', str(vmid), '--name', name] + [str(a) for a in args]
     rc, out, err = _run(cmd, timeout=300)
     if rc != 0:
@@ -149,8 +125,8 @@ def handle_qm_importdisk(params):
     vmid = _validate_vmid(params['vmid'])
     disk_path = params.get('disk_path', '')
     storage = params.get('storage', '')
-    if not disk_path.startswith('/var/lib/'):
-        return {'ok': False, 'error': 'disk_path must be under /var/lib/'}
+    if not disk_path.startswith('/var/lib/blockhost/'):
+        return {'ok': False, 'error': 'disk_path must be under /var/lib/blockhost/'}
     if not os.path.isfile(disk_path):
         return {'ok': False, 'error': f'Disk file not found: {disk_path}'}
     if not STORAGE_RE.match(storage):
@@ -172,14 +148,6 @@ def handle_qm_set(params):
             return {'ok': False, 'error': f'Disallowed option: {key}'}
         cmd.extend([f'--{key}', str(value)])
     rc, out, err = _run(cmd, timeout=120)
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    return {'ok': True, 'output': out}
-
-
-def handle_qm_template(params):
-    vmid = _validate_vmid(params['vmid'])
-    rc, out, err = _run(['qm', 'template', str(vmid)])
     if rc != 0:
         return {'ok': False, 'error': err or out}
     return {'ok': True, 'output': out}
@@ -276,16 +244,6 @@ def handle_generate_wallet(params):
     keyfile = CONFIG_DIR / f'{name}.key'
     if keyfile.exists():
         return {'ok': False, 'error': f'Key file already exists: {keyfile}'}
-    try:
-        import ecdsa
-        sk = ecdsa.SigningKey.generate(curve=ecdsa.SECP256k1)
-        private_hex = sk.to_string().hex()
-        vk = sk.get_verifying_key()
-        pub_bytes = vk.to_string()
-        import hashlib
-        keccak = hashlib.new('sha3_256')
-    except ImportError:
-        pass
     rc, out, err = _run(['cast', 'wallet', 'new'], timeout=30)
     if rc != 0:
         return {'ok': False, 'error': f'cast wallet new failed: {err}'}
@@ -347,14 +305,14 @@ def handle_addressbook_save(params):
 
 
 ACTIONS = {
-    'qm-start': handle_qm_start,
-    'qm-stop': handle_qm_stop,
-    'qm-shutdown': handle_qm_shutdown,
-    'qm-destroy': handle_qm_destroy,
+    'qm-start': lambda p: _handle_qm_simple(p, 'start'),
+    'qm-stop': lambda p: _handle_qm_simple(p, 'stop'),
+    'qm-shutdown': lambda p: _handle_qm_simple(p, 'shutdown', timeout=300),
+    'qm-destroy': lambda p: _handle_qm_simple(p, 'destroy', extra_args=['--purge']),
     'qm-create': handle_qm_create,
     'qm-importdisk': handle_qm_importdisk,
     'qm-set': handle_qm_set,
-    'qm-template': handle_qm_template,
+    'qm-template': lambda p: _handle_qm_simple(p, 'template'),
     'ip6-route-add': handle_ip6_route_add,
     'ip6-route-del': handle_ip6_route_del,
     'iptables-open': handle_iptables_open,
@@ -381,7 +339,6 @@ async def write_message(writer, msg):
 
 
 async def handle_connection(reader, writer):
-    peer = 'unknown'
     try:
         msg = await asyncio.wait_for(read_message(reader), timeout=10)
         action = msg.get('action', '')
