@@ -76,6 +76,11 @@ blockhost-engine (populates configs via init-server.sh)
 /usr/share/blockhost/root-agent/
 └── blockhost_root_agent.py         # Root agent daemon (runs as root)
 
+/usr/share/blockhost/root-agent-actions/
+├── _common.py                      # Shared validation helpers and run()
+├── networking.py                   # IPv6 routing actions (core)
+└── system.py                       # Firewall, disk image, wallet actions (core)
+
 /etc/systemd/system/
 └── blockhost-root-agent.service    # Systemd unit for root agent daemon
 ```
@@ -222,6 +227,40 @@ call("my-action", timeout=60, key="value")
 ```
 
 Protocol: 4-byte big-endian length prefix + JSON payload over Unix socket at `/run/blockhost/root-agent.sock`.
+
+#### Root Agent Action Plugin System
+
+The daemon loads action handlers at startup from `/usr/share/blockhost/root-agent-actions/`. Each `.py` file (except `_`-prefixed files) must export an `ACTIONS` dict:
+
+```python
+# /usr/share/blockhost/root-agent-actions/networking.py
+from _common import validate_ipv6_128, validate_dev, run
+
+def handle_ip6_route_add(params):
+    address = validate_ipv6_128(params['address'])
+    dev = validate_dev(params['dev'])
+    rc, out, err = run(['ip', '-6', 'route', 'replace', address, 'dev', dev])
+    if rc != 0:
+        return {'ok': False, 'error': err or out}
+    return {'ok': True, 'output': out}
+
+ACTIONS = {
+    'ip6-route-add': handle_ip6_route_add,
+}
+```
+
+**Contract:**
+- Each handler receives a `params` dict and returns `{"ok": True, ...}` or `{"ok": False, "error": "reason"}`
+- Shared helpers (validation regexes, `run()`) live in `_common.py` — import with `from _common import ...`
+- Action name conflicts are logged and the first-loaded module wins (files loaded in sorted order)
+- Only stdlib imports — no third-party dependencies
+
+**Core modules** (shipped by blockhost-common):
+- `networking.py` — `ip6-route-add`, `ip6-route-del`
+- `system.py` — `iptables-open`, `iptables-close`, `virt-customize`, `generate-wallet`, `addressbook-save`
+
+**Provisioner modules** (shipped by provisioner packages):
+- e.g. `qm.py` — `qm-start`, `qm-stop`, `qm-create`, etc.
 
 ### blockhost.provisioner
 

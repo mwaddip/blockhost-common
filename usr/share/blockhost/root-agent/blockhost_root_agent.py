@@ -3,29 +3,25 @@
 BlockHost Root Agent — Privileged Operations Daemon
 
 Runs as root, listens on a Unix domain socket, accepts validated JSON
-commands for operations that genuinely require root privileges:
-  - qm (Proxmox VM management)
-  - ip -6 route (kernel networking)
-  - iptables (firewall)
-  - virt-customize (disk images)
-  - Key/addressbook writes to /etc/blockhost/
+commands. Action handlers are loaded as plugins from the actions directory.
+
+Each .py file in ACTIONS_DIR (except _-prefixed files) must export an
+ACTIONS dict mapping action names to handler functions.
 
 Protocol: 4-byte big-endian length prefix + JSON payload (both directions).
 """
 
 import asyncio
+import importlib.util
 import json
 import logging
 import os
-import re
 import struct
-import subprocess
 import sys
 from pathlib import Path
 
 SOCKET_PATH = '/run/blockhost/root-agent.sock'
-CONFIG_DIR = Path('/etc/blockhost')
-STATE_DIR = Path('/var/lib/blockhost')
+ACTIONS_DIR = Path('/usr/share/blockhost/root-agent-actions')
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,293 +30,59 @@ logging.basicConfig(
 )
 log = logging.getLogger('root-agent')
 
-VMID_MIN = 100
-VMID_MAX = 999999
-
-NAME_RE = re.compile(r'^[a-z0-9-]{1,64}$')
-SHORT_NAME_RE = re.compile(r'^[a-z0-9-]{1,32}$')
-STORAGE_RE = re.compile(r'^[a-z0-9-]+$')
-ADDRESS_RE = re.compile(r'^0x[0-9a-fA-F]{40}$')
-COMMENT_RE = re.compile(r'^[a-zA-Z0-9-]+$')
-IPV6_CIDR128_RE = re.compile(r'^([0-9a-fA-F:]+)/128$')
-
-QM_SET_ALLOWED_KEYS = frozenset({
-    'scsi0', 'boot', 'ide2', 'agent', 'serial0', 'vga',
-    'net0', 'memory', 'cores', 'name', 'ostype', 'scsihw',
-})
-
-QM_CREATE_ALLOWED_ARGS = frozenset({
-    '--scsi0', '--boot', '--ide2', '--agent', '--serial0', '--vga',
-    '--net0', '--memory', '--cores', '--name', '--ostype', '--scsihw',
-    '--sockets', '--cpu', '--numa', '--machine', '--bios',
-})
-
-ALLOWED_ROUTE_DEVS = frozenset({'vmbr0'})
-WALLET_DENY_NAMES = frozenset({'admin', 'server', 'dev', 'broker'})
-
-VIRT_CUSTOMIZE_ALLOWED_OPS = frozenset({
-    '--install', '--run-command', '--copy-in', '--upload',
-    '--chmod', '--mkdir', '--write', '--append-line',
-    '--firstboot-command', '--run', '--delete',
-})
+ACTIONS = {}
 
 
-def _validate_vmid(vmid):
-    if not isinstance(vmid, int) or vmid < VMID_MIN or vmid > VMID_MAX:
-        raise ValueError(f'vmid must be int {VMID_MIN}-{VMID_MAX}')
-    return vmid
+def _load_action_plugins() -> dict:
+    """Load action handler modules from the actions directory.
 
+    Each .py file in ACTIONS_DIR must define an ACTIONS dict mapping
+    action names to handler functions: {"action-name": handler_func}
 
-def _validate_ipv6_128(address):
-    if not IPV6_CIDR128_RE.match(address):
-        raise ValueError(f'Invalid IPv6/128: {address}')
-    return address
+    Files starting with _ (like _common.py) are skipped — they provide
+    shared utilities, not actions.
+    """
+    actions = {}
 
+    if not ACTIONS_DIR.is_dir():
+        log.warning('Actions directory not found: %s', ACTIONS_DIR)
+        return actions
 
-def _validate_dev(dev):
-    if dev not in ALLOWED_ROUTE_DEVS:
-        raise ValueError(f'Device not allowed: {dev}')
-    return dev
+    # Add ACTIONS_DIR to the front of sys.path so action modules can
+    # import _common with a bare `from _common import ...`
+    actions_dir_str = str(ACTIONS_DIR)
+    if actions_dir_str not in sys.path:
+        sys.path.insert(0, actions_dir_str)
 
-
-def _run(cmd, timeout=120):
-    log.info('exec: %s', ' '.join(str(c) for c in cmd))
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    return result.returncode, result.stdout.strip(), result.stderr.strip()
-
-
-def _handle_qm_simple(params, subcommand, extra_args=(), timeout=120):
-    """Handle simple qm commands that only need a validated VMID."""
-    vmid = _validate_vmid(params['vmid'])
-    rc, out, err = _run(['qm', subcommand, str(vmid)] + list(extra_args), timeout=timeout)
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    return {'ok': True, 'output': out}
-
-
-def handle_qm_create(params):
-    vmid = _validate_vmid(params['vmid'])
-    name = params.get('name', '')
-    if not NAME_RE.match(name):
-        return {'ok': False, 'error': f'Invalid VM name: {name}'}
-    args = params.get('args', [])
-    if not isinstance(args, list):
-        return {'ok': False, 'error': 'args must be a list'}
-    i = 0
-    while i < len(args):
-        arg = str(args[i])
-        if not arg.startswith('--'):
-            return {'ok': False, 'error': f'Unexpected positional arg: {arg}'}
-        if arg not in QM_CREATE_ALLOWED_ARGS:
-            return {'ok': False, 'error': f'Disallowed arg: {arg}'}
-        i += 2
-    cmd = ['qm', 'create', str(vmid), '--name', name] + [str(a) for a in args]
-    rc, out, err = _run(cmd, timeout=300)
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    return {'ok': True, 'output': out}
-
-
-def handle_qm_importdisk(params):
-    vmid = _validate_vmid(params['vmid'])
-    disk_path = params.get('disk_path', '')
-    storage = params.get('storage', '')
-    if not disk_path.startswith('/var/lib/blockhost/'):
-        return {'ok': False, 'error': 'disk_path must be under /var/lib/blockhost/'}
-    if not os.path.isfile(disk_path):
-        return {'ok': False, 'error': f'Disk file not found: {disk_path}'}
-    if not STORAGE_RE.match(storage):
-        return {'ok': False, 'error': f'Invalid storage name: {storage}'}
-    rc, out, err = _run(['qm', 'importdisk', str(vmid), disk_path, storage], timeout=600)
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    return {'ok': True, 'output': out}
-
-
-def handle_qm_set(params):
-    vmid = _validate_vmid(params['vmid'])
-    options = params.get('options', {})
-    if not isinstance(options, dict):
-        return {'ok': False, 'error': 'options must be a dict'}
-    cmd = ['qm', 'set', str(vmid)]
-    for key, value in options.items():
-        if key not in QM_SET_ALLOWED_KEYS:
-            return {'ok': False, 'error': f'Disallowed option: {key}'}
-        cmd.extend([f'--{key}', str(value)])
-    rc, out, err = _run(cmd, timeout=120)
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    return {'ok': True, 'output': out}
-
-
-def handle_ip6_route_add(params):
-    address = _validate_ipv6_128(params['address'])
-    dev = _validate_dev(params['dev'])
-    rc, out, err = _run(['ip', '-6', 'route', 'replace', address, 'dev', dev])
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    return {'ok': True, 'output': out}
-
-
-def handle_ip6_route_del(params):
-    address = _validate_ipv6_128(params['address'])
-    dev = _validate_dev(params['dev'])
-    rc, out, err = _run(['ip', '-6', 'route', 'del', address, 'dev', dev])
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    return {'ok': True, 'output': out}
-
-
-def handle_iptables_open(params):
-    port = params.get('port')
-    if not isinstance(port, int) or port < 1 or port > 65535:
-        return {'ok': False, 'error': 'port must be 1-65535'}
-    proto = params.get('proto', 'tcp')
-    if proto not in ('tcp', 'udp'):
-        return {'ok': False, 'error': 'proto must be tcp or udp'}
-    comment = params.get('comment', '')
-    if not COMMENT_RE.match(comment):
-        return {'ok': False, 'error': 'Invalid comment (alphanumeric/dash only)'}
-    rc, out, err = _run([
-        'iptables', '-A', 'INPUT', '-p', proto,
-        '--dport', str(port), '-j', 'ACCEPT',
-        '-m', 'comment', '--comment', comment,
-    ])
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    return {'ok': True, 'output': out}
-
-
-def handle_iptables_close(params):
-    port = params.get('port')
-    if not isinstance(port, int) or port < 1 or port > 65535:
-        return {'ok': False, 'error': 'port must be 1-65535'}
-    proto = params.get('proto', 'tcp')
-    if proto not in ('tcp', 'udp'):
-        return {'ok': False, 'error': 'proto must be tcp or udp'}
-    comment = params.get('comment', '')
-    if not COMMENT_RE.match(comment):
-        return {'ok': False, 'error': 'Invalid comment (alphanumeric/dash only)'}
-    rc, out, err = _run([
-        'iptables', '-D', 'INPUT', '-p', proto,
-        '--dport', str(port), '-j', 'ACCEPT',
-        '-m', 'comment', '--comment', comment,
-    ])
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    return {'ok': True, 'output': out}
-
-
-def handle_virt_customize(params):
-    image_path = params.get('image_path', '')
-    commands = params.get('commands', [])
-    if not (image_path.startswith('/var/lib/blockhost/') or image_path.startswith('/tmp/')):
-        return {'ok': False, 'error': 'image_path must be under /var/lib/blockhost/ or /tmp/'}
-    if not os.path.isfile(image_path):
-        return {'ok': False, 'error': f'Image not found: {image_path}'}
-    if not isinstance(commands, list) or not commands:
-        return {'ok': False, 'error': 'commands must be a non-empty list'}
-    cmd = ['virt-customize', '-a', image_path]
-    for entry in commands:
-        if not isinstance(entry, list) or len(entry) < 2:
-            return {'ok': False, 'error': f'Each command must be [op, arg, ...]: {entry}'}
-        op = entry[0]
-        if op not in VIRT_CUSTOMIZE_ALLOWED_OPS:
-            return {'ok': False, 'error': f'Disallowed virt-customize op: {op}'}
-        cmd.extend(entry)
-    rc, out, err = _run(cmd, timeout=600)
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    return {'ok': True, 'output': out}
-
-
-def handle_generate_wallet(params):
-    import grp
-    name = params.get('name', '')
-    if not SHORT_NAME_RE.match(name):
-        return {'ok': False, 'error': f'Invalid wallet name: {name}'}
-    if name in WALLET_DENY_NAMES:
-        return {'ok': False, 'error': f'Reserved name: {name}'}
-    keyfile = CONFIG_DIR / f'{name}.key'
-    if keyfile.exists():
-        return {'ok': False, 'error': f'Key file already exists: {keyfile}'}
-    rc, out, err = _run(['cast', 'wallet', 'new'], timeout=30)
-    if rc != 0:
-        return {'ok': False, 'error': f'cast wallet new failed: {err}'}
-    address = None
-    private_key = None
-    for line in out.splitlines():
-        line = line.strip()
-        if line.startswith('Address:'):
-            address = line.split(':', 1)[1].strip()
-        elif line.lower().startswith('private key:'):
-            private_key = line.split(':', 1)[1].strip()
-    if not address or not private_key:
-        return {'ok': False, 'error': f'Failed to parse cast wallet output: {out}'}
-    raw_key = private_key[2:] if private_key.startswith('0x') else private_key
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    keyfile.write_text(raw_key)
-    gid = grp.getgrnam('blockhost').gr_gid
-    os.chown(str(keyfile), 0, gid)
-    os.chmod(str(keyfile), 0o640)
-    ab_file = CONFIG_DIR / 'addressbook.json'
-    addressbook = {}
-    if ab_file.exists():
+    for path in sorted(ACTIONS_DIR.glob('*.py')):
+        if path.name.startswith('_'):
+            continue
+        module_name = path.stem
         try:
-            addressbook = json.loads(ab_file.read_text())
-        except (json.JSONDecodeError, IOError):
-            pass
-    addressbook[name] = {'address': address, 'keyfile': str(keyfile)}
-    ab_file.write_text(json.dumps(addressbook, indent=2))
-    os.chown(str(ab_file), 0, gid)
-    os.chmod(str(ab_file), 0o640)
-    log.info('Generated wallet %s: %s', name, address)
-    return {'ok': True, 'address': address}
+            spec = importlib.util.spec_from_file_location(
+                f'root_agent_actions.{module_name}', path
+            )
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
 
+            module_actions = getattr(mod, 'ACTIONS', {})
+            if not isinstance(module_actions, dict):
+                log.warning('Module %s: ACTIONS is not a dict, skipping', module_name)
+                continue
 
-def handle_addressbook_save(params):
-    import grp
-    entries = params.get('entries', {})
-    if not isinstance(entries, dict):
-        return {'ok': False, 'error': 'entries must be a dict'}
-    for name, entry in entries.items():
-        if not SHORT_NAME_RE.match(name) and not NAME_RE.match(name):
-            return {'ok': False, 'error': f'Invalid entry name: {name}'}
-        if not isinstance(entry, dict):
-            return {'ok': False, 'error': f'Entry {name} must be a dict'}
-        addr = entry.get('address', '')
-        if not ADDRESS_RE.match(addr):
-            return {'ok': False, 'error': f'Invalid address for {name}: {addr}'}
-        keyfile = entry.get('keyfile')
-        if keyfile and not keyfile.startswith('/etc/blockhost/'):
-            return {'ok': False, 'error': f'keyfile for {name} must be under /etc/blockhost/'}
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    ab_file = CONFIG_DIR / 'addressbook.json'
-    ab_file.write_text(json.dumps(entries, indent=2))
-    gid = grp.getgrnam('blockhost').gr_gid
-    os.chown(str(ab_file), 0, gid)
-    os.chmod(str(ab_file), 0o640)
-    log.info('Saved addressbook with %d entries', len(entries))
-    return {'ok': True}
+            loaded = 0
+            for name in module_actions:
+                if name in actions:
+                    log.warning('Action %s from %s conflicts with existing, skipping', name, module_name)
+                    continue
+                actions[name] = module_actions[name]
+                loaded += 1
 
+            log.info('Loaded %d actions from %s', loaded, module_name)
+        except Exception as e:
+            log.error('Failed to load action module %s: %s', module_name, e)
 
-ACTIONS = {
-    'qm-start': lambda p: _handle_qm_simple(p, 'start'),
-    'qm-stop': lambda p: _handle_qm_simple(p, 'stop'),
-    'qm-shutdown': lambda p: _handle_qm_simple(p, 'shutdown', timeout=300),
-    'qm-destroy': lambda p: _handle_qm_simple(p, 'destroy', extra_args=['--purge']),
-    'qm-create': handle_qm_create,
-    'qm-importdisk': handle_qm_importdisk,
-    'qm-set': handle_qm_set,
-    'qm-template': lambda p: _handle_qm_simple(p, 'template'),
-    'ip6-route-add': handle_ip6_route_add,
-    'ip6-route-del': handle_ip6_route_del,
-    'iptables-open': handle_iptables_open,
-    'iptables-close': handle_iptables_close,
-    'virt-customize': handle_virt_customize,
-    'generate-wallet': handle_generate_wallet,
-    'addressbook-save': handle_addressbook_save,
-}
+    return actions
 
 
 async def read_message(reader):
@@ -376,6 +138,11 @@ async def main():
     if os.getuid() != 0:
         log.error('Root agent must run as root')
         sys.exit(1)
+
+    global ACTIONS
+    ACTIONS = _load_action_plugins()
+    log.info('Loaded %d total actions', len(ACTIONS))
+
     run_dir = Path(SOCKET_PATH).parent
     run_dir.mkdir(parents=True, exist_ok=True)
     socket_path = Path(SOCKET_PATH)
