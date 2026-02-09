@@ -66,7 +66,9 @@ blockhost-engine (populates configs via init-server.sh)
 └── vm_db.py                        # VM database abstraction
 
 /usr/share/blockhost/cloud-init/templates/
-└── .gitkeep                        # Template directory (populated by provisioners)
+├── devbox.yaml                     # Development environment template
+├── nft-auth.yaml                   # NFT-authenticated VM template (primary)
+└── webserver.yaml                  # Basic webserver template
 
 /usr/share/doc/blockhost-common/
 └── provisioner-contract.md         # Provisioner implementation reference
@@ -383,6 +385,21 @@ Template search order: extra_dirs (if provided) → `/usr/share/blockhost/cloud-
 - `/etc/blockhost/` remains root-owned (root:blockhost) — services read, only root writes
 - Services can run as unprivileged users
 - Key files remain 600 root:root
+
+### 6. Cloud-init templates in blockhost-common
+
+**Decision:** Ship cloud-init templates in blockhost-common, not the provisioner.
+
+**Rationale:**
+- Templates are hypervisor-agnostic — the same `nft-auth.yaml` works for Proxmox, libvirt, or Docker
+- The provisioner passes rendered content to its backend-specific VM creation process
+- Templates use `string.Template` syntax (`${VAR}`) — rendered by `blockhost.cloud_init.render_cloud_init()`
+- Search path allows provisioners to supply additional templates via `extra_dirs`
+
+**Templates shipped:**
+- `nft-auth.yaml` — Primary template for web3 NFT-authenticated VMs (PAM + signing page + HTTPS)
+- `webserver.yaml` — Basic nginx webserver with firewall
+- `devbox.yaml` — Development environment with common tools
 
 ## Build Instructions
 
