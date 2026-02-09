@@ -59,9 +59,17 @@ blockhost-engine (populates configs via init-server.sh)
 
 /usr/lib/python3/dist-packages/blockhost/
 ├── __init__.py                     # Package exports
+├── cloud_init.py                   # Cloud-init template discovery and rendering
 ├── config.py                       # Path constants, config loading
+├── provisioner.py                  # Provisioner dispatcher (pluggable backends)
 ├── root_agent.py                   # Root agent daemon client
 └── vm_db.py                        # VM database abstraction
+
+/usr/share/blockhost/cloud-init/templates/
+└── .gitkeep                        # Template directory (populated by provisioners)
+
+/usr/share/doc/blockhost-common/
+└── provisioner-contract.md         # Provisioner implementation reference
 
 /usr/share/blockhost/root-agent/
 └── blockhost_root_agent.py         # Root agent daemon (runs as root)
@@ -212,6 +220,61 @@ call("my-action", timeout=60, key="value")
 ```
 
 Protocol: 4-byte big-endian length prefix + JSON payload over Unix socket at `/run/blockhost/root-agent.sock`.
+
+### blockhost.provisioner
+
+```python
+from blockhost.provisioner import (
+    get_provisioner,          # Singleton factory
+    ProvisionerDispatcher,    # Class (for testing with custom manifest path)
+)
+
+# Get the active provisioner
+p = get_provisioner()
+
+# Query provisioner metadata
+p.name                # 'proxmox' (or 'unknown' if no manifest)
+p.display_name        # 'Proxmox VE + Terraform'
+p.is_loaded           # True if manifest was found and parsed
+
+# Get CLI command for a verb
+cmd = p.get_command('create')   # 'blockhost-vm-create'
+
+# Run a provisioner command
+result = p.run('status', ['--vmid', '100'], capture_output=True, text=True)
+
+# Wizard/installer integration
+p.wizard_module       # Python module path for wizard Blueprint
+p.finalization_steps  # Ordered step IDs for wizard finalization
+p.first_boot_hook     # Path to first-boot hook script
+
+# Root agent extension
+p.root_agent_actions  # Path to action module for root agent daemon
+```
+
+When no manifest exists at `/usr/share/blockhost/provisioner.json`, the dispatcher falls back to legacy hardcoded command names (`blockhost-vm-create`, etc.). See `provisioner-contract.md` for the full manifest schema and implementation guide.
+
+### blockhost.cloud_init
+
+```python
+from blockhost.cloud_init import (
+    find_template,        # Locate a template file by name
+    render_cloud_init,    # Render template with variable substitution
+    list_templates,       # List available template filenames
+)
+
+# Find and render a template
+path = find_template('nft-auth.yaml')
+content = render_cloud_init('nft-auth.yaml', {
+    'VM_NAME': 'web-001',
+    'NFT_CONTRACT': '0x...',
+})
+
+# List available templates
+names = list_templates()  # ['devbox.yaml', 'nft-auth.yaml']
+```
+
+Template search order: extra_dirs (if provided) → `/usr/share/blockhost/cloud-init/templates/` → `cloud-init/templates/` (dev fallback). Uses `string.Template.safe_substitute` so shell variables in templates are preserved.
 
 ## Migration Guide
 
