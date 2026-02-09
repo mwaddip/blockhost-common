@@ -101,14 +101,14 @@ blockhost-engine (populates configs via init-server.sh)
 **Owner:** `blockhost-common` (template), `blockhost-provisioner` (may override)
 
 Contains VM provisioning settings:
-- `terraform_dir` - Where Terraform runs
 - `db_file` - Path to vms.json
 - `fields` - Field name mappings (optional, for backend migration)
 - `ip_pool` - IPv4 allocation range (network, start, end, gateway)
 - `ipv6_pool` - IPv6 allocation range (start, end offsets within prefix)
-- `vmid_range` - Proxmox VMID range (also accepts `vmid_pool`)
 - `default_expiry_days` - Default VM lifetime
 - `gc_grace_days` - Grace period before GC destroys suspended VMs
+- `terraform_dir` - *(optional, provisioner-managed)* Where Terraform runs
+- `vmid_range` - *(optional, provisioner-managed)* VMID range (also accepts `vmid_pool`)
 
 ### web3-defaults.yaml
 

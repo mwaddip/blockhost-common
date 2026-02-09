@@ -95,11 +95,11 @@ def _normalize_config(config: dict) -> dict:
     """
     normalized = config.copy()
 
-    # Accept both vmid_range and vmid_pool
+    # Accept both vmid_range and vmid_pool (None if neither is set)
     if "vmid_range" not in normalized and "vmid_pool" in normalized:
         normalized["vmid_range"] = normalized.pop("vmid_pool")
     elif "vmid_range" not in normalized:
-        normalized["vmid_range"] = {"start": 100, "end": 999}
+        normalized["vmid_range"] = None
 
     # Normalize IP pool
     if "ip_pool" in normalized:
@@ -370,7 +370,18 @@ class VMDatabaseBase(ABC):
         return None  # Pool exhausted
 
     def allocate_vmid(self) -> int:
-        """Allocate the next available VMID."""
+        """Allocate the next available VMID.
+
+        Raises:
+            RuntimeError: If vmid_range is not configured
+            ValueError: If VMID range is exhausted
+        """
+        if not self.vmid_range:
+            raise RuntimeError(
+                "vmid_range not configured in db.yaml — "
+                "set vmid_range.start and vmid_range.end, or let the provisioner configure it"
+            )
+
         db = self._read_db()
 
         vmid = db["next_vmid"]
@@ -506,13 +517,14 @@ class VMDatabase(VMDatabaseBase):
 
         # Initialize empty database if it doesn't exist
         if not self.db_file.exists():
-            self._write_db({
+            initial_db = {
                 "vms": {},
-                "next_vmid": self.vmid_range["start"],
+                "next_vmid": self.vmid_range["start"] if self.vmid_range else 0,
                 "allocated_ips": [],
                 "allocated_ipv6": [],
                 "reserved_nft_tokens": {},
-            })
+            }
+            self._write_db(initial_db)
 
     def _read_db(self) -> dict:
         """Read the database file with shared lock."""
@@ -584,13 +596,14 @@ class MockVMDatabase(VMDatabaseBase):
             self.ipv6_prefix = broker_allocation.get("prefix") if broker_allocation else None
 
         if not self.db_file.exists():
-            self._write_db({
+            initial_db = {
                 "vms": {},
-                "next_vmid": self.vmid_range["start"],
+                "next_vmid": self.vmid_range["start"] if self.vmid_range else 0,
                 "allocated_ips": [],
                 "allocated_ipv6": [],
                 "reserved_nft_tokens": {},
-            })
+            }
+            self._write_db(initial_db)
 
     def _read_db(self) -> dict:
         with open(self.db_file) as f:

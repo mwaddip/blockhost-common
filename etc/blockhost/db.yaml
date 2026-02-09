@@ -13,8 +13,8 @@
 # Default: /var/lib/blockhost/vms.json
 db_file: /var/lib/blockhost/vms.json
 
-# Terraform working directory (where .tf.json files go and terraform runs)
-terraform_dir: /var/lib/blockhost/terraform
+# Terraform working directory — set by provisioner if needed (optional)
+# terraform_dir: /var/lib/blockhost/terraform
 
 # Field name mappings (optional - defaults shown below)
 # Used for compatibility/migration to other backends
@@ -44,12 +44,11 @@ ipv6_pool:
   start: 2    # Skip ::0 (network) and ::1 (Proxmox host uses ::1)
   end: 254    # Last usable address in a /120
 
-# VMID range for dynamically created VMs
+# VMID range for dynamically created VMs — set by provisioner if needed (optional)
 # Note: vmid_pool is also accepted as an alias for vmid_range
-# Must not conflict with existing VMs or templates on your Proxmox host
-vmid_range:
-  start: 100
-  end: 999
+# vmid_range:
+#   start: 100
+#   end: 999
 
 # Default expiry for new VMs (in days)
 # VMs are automatically marked for garbage collection after this period

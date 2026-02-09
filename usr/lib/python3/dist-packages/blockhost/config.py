@@ -122,12 +122,12 @@ def load_db_config(fallback_dir: Optional[Path] = None) -> dict:
 
     Returns:
         Configuration dictionary with keys:
-        - terraform_dir: Path to Terraform working directory
         - db_file: Path to VM database JSON file
         - ip_pool: IP allocation pool settings
-        - vmid_range: VMID range for new VMs
         - default_expiry_days: Default VM expiry period
         - gc_grace_days: Grace period before GC destroys expired VMs
+        - terraform_dir: (optional, provisioner-managed)
+        - vmid_range: (optional, provisioner-managed)
     """
     return load_config(DB_CONFIG_FILE, fallback_dir)
 
@@ -213,20 +213,24 @@ def get_db_file_path(fallback_dir: Optional[Path] = None) -> Path:
     return Path(config.get("db_file", str(DB_FILE)))
 
 
-def get_terraform_dir(fallback_dir: Optional[Path] = None) -> Path:
+def get_terraform_dir(fallback_dir: Optional[Path] = None) -> Optional[Path]:
     """
-    Get the Terraform working directory.
+    Get the Terraform working directory, or None if not configured.
 
-    Reads terraform_dir from db.yaml configuration.
+    Reads terraform_dir from db.yaml configuration. Returns None when no
+    terraform_dir is set (e.g. non-Proxmox provisioners that don't use Terraform).
 
     Returns:
-        Path to the Terraform directory
+        Path to the Terraform directory, or None
     """
-    config = load_db_config(fallback_dir)
+    try:
+        config = load_db_config(fallback_dir)
+    except FileNotFoundError:
+        return None
     tf_dir = config.get("terraform_dir")
     if tf_dir:
         return Path(tf_dir)
-    return TERRAFORM_DIR
+    return None
 
 
 def ensure_directories():
@@ -236,14 +240,16 @@ def ensure_directories():
     Creates:
     - /etc/blockhost/
     - /var/lib/blockhost/
-    - /var/lib/blockhost/terraform/
+    - /var/lib/blockhost/terraform/ (only if terraform_dir is configured)
 
     Note: This is typically done by the postinst script, but can be
     called manually for development/testing.
     """
     CONFIG_DIR.mkdir(mode=0o750, parents=True, exist_ok=True)
     DATA_DIR.mkdir(mode=0o750, parents=True, exist_ok=True)
-    TERRAFORM_DIR.mkdir(mode=0o755, parents=True, exist_ok=True)
+    tf_dir = get_terraform_dir()
+    if tf_dir:
+        tf_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
 
 
 # =============================================================================
