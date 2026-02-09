@@ -22,7 +22,6 @@ __version__ = "0.1.0"
 from .config import (
     CONFIG_DIR,
     DATA_DIR,
-    TERRAFORM_DIR,
     get_config_path,
     load_config,
     load_db_config,
@@ -32,7 +31,6 @@ from .config import (
 from .vm_db import get_database, VMDatabase, MockVMDatabase, VMDatabaseBase
 from .root_agent import (
     call as root_agent_call,
-    qm_start, qm_stop, qm_shutdown, qm_destroy,
     ip6_route_add, ip6_route_del,
     generate_wallet, addressbook_save,
     RootAgentError, RootAgentConnectionError,
@@ -46,7 +44,6 @@ __all__ = [
     # Path constants
     "CONFIG_DIR",
     "DATA_DIR",
-    "TERRAFORM_DIR",
     # Config functions
     "get_config_path",
     "load_config",
@@ -60,10 +57,6 @@ __all__ = [
     "VMDatabaseBase",
     # Root agent client
     "root_agent_call",
-    "qm_start",
-    "qm_stop",
-    "qm_shutdown",
-    "qm_destroy",
     "ip6_route_add",
     "ip6_route_del",
     "generate_wallet",

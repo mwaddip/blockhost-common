@@ -54,8 +54,7 @@ blockhost-engine (populates configs via init-server.sh)
 └── web3-defaults.yaml              # Blockchain/NFT settings
 
 /var/lib/blockhost/                 # Data directory (750 blockhost:blockhost)
-├── vms.json                        # VM database (created at runtime)
-└── terraform/                      # Terraform working directory
+└── vms.json                        # VM database (created at runtime)
 
 /usr/lib/python3/dist-packages/blockhost/
 ├── __init__.py                     # Package exports
@@ -141,7 +140,6 @@ from blockhost.config import (
     # Path constants
     CONFIG_DIR,           # /etc/blockhost
     DATA_DIR,             # /var/lib/blockhost
-    TERRAFORM_DIR,        # /var/lib/blockhost/terraform
 
     # Config loading
     get_config_path,      # Find config file with fallback
@@ -152,7 +150,6 @@ from blockhost.config import (
 
     # Utilities
     get_db_file_path,     # Get vms.json path from config
-    get_terraform_dir,    # Get terraform_dir from config
     ensure_directories,   # Create directories if missing
     is_development_mode,  # Check if in dev mode
 )
@@ -205,10 +202,6 @@ to_destroy = db.get_vms_to_destroy(grace_days=7)  # Suspended past grace
 ```python
 from blockhost.root_agent import (
     call,                 # Send arbitrary command to root agent
-    qm_start,            # Start a VM
-    qm_stop,             # Stop a VM (immediate)
-    qm_shutdown,         # Graceful shutdown
-    qm_destroy,          # Destroy a VM
     ip6_route_add,       # Add IPv6 route
     ip6_route_del,       # Remove IPv6 route
     generate_wallet,     # Generate a new wallet
@@ -218,11 +211,11 @@ from blockhost.root_agent import (
 )
 
 # Usage
-qm_start(100)
 ip6_route_add("2001:db8::1/128", "vmbr0")
 result = generate_wallet("hot")  # {"ok": true, "address": "0x..."}
 
-# Custom command
+# Provisioner-specific commands via generic call()
+call("qm-start", vmid=100)
 call("my-action", timeout=60, key="value")
 ```
 
@@ -293,7 +286,7 @@ p.first_boot_hook     # Path to first-boot hook script
 p.root_agent_actions  # Path to action module for root agent daemon
 ```
 
-When no manifest exists at `/usr/share/blockhost/provisioner.json`, the dispatcher falls back to legacy hardcoded command names (`blockhost-vm-create`, etc.). See `provisioner-contract.md` for the full manifest schema and implementation guide.
+When no manifest exists at `/usr/share/blockhost/provisioner.json`, `get_command()` raises `RuntimeError`. See `provisioner-contract.md` for the full manifest schema and implementation guide.
 
 ### blockhost.cloud_init
 

@@ -45,7 +45,7 @@ journalctl -u blockhost-root-agent
 ```python
 from blockhost.config import load_db_config, load_web3_config
 from blockhost.vm_db import get_database
-from blockhost.root_agent import qm_start, generate_wallet
+from blockhost.root_agent import call, generate_wallet
 from blockhost.provisioner import get_provisioner
 from blockhost.cloud_init import render_cloud_init
 
@@ -58,12 +58,12 @@ db = get_database()
 vmid = db.allocate_vmid()
 
 # Call root agent daemon (requires root-agent.sock)
-qm_start(vmid)
+call("qm-start", vmid=vmid)       # Provisioner-specific actions via generic call()
 wallet = generate_wallet("hot")
 
 # Provisioner dispatcher (discovers active backend via manifest)
 p = get_provisioner()
-cmd = p.get_command('create')        # Falls back to legacy commands if no manifest
+cmd = p.get_command('create')        # Requires provisioner manifest
 
 # Cloud-init template rendering
 content = render_cloud_init('nft-auth.yaml', {'VM_NAME': 'web-001'})

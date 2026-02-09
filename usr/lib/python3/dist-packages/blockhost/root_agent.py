@@ -2,9 +2,9 @@
 Root Agent Client — call the privileged root agent daemon via Unix socket.
 
 Usage:
-    from blockhost.root_agent import qm_start, qm_stop, ip6_route_add, generate_wallet
+    from blockhost.root_agent import call, ip6_route_add, generate_wallet
 
-    qm_start(100)
+    call("my-action", vmid=100)
     ip6_route_add("2001:db8::1/128", "vmbr0")
     result = generate_wallet("hot")  # returns {"address": "0x..."}
 """
@@ -75,18 +75,6 @@ def _recv_exact(sock, n):
 
 
 # --- Convenience wrappers ---
-
-def qm_start(vmid: int) -> dict:
-    return call("qm-start", vmid=vmid)
-
-def qm_stop(vmid: int) -> dict:
-    return call("qm-stop", vmid=vmid)
-
-def qm_shutdown(vmid: int) -> dict:
-    return call("qm-shutdown", vmid=vmid, timeout=300)
-
-def qm_destroy(vmid: int) -> dict:
-    return call("qm-destroy", vmid=vmid)
 
 def ip6_route_add(address: str, dev: str = "vmbr0") -> dict:
     return call("ip6-route-add", address=address, dev=dev)

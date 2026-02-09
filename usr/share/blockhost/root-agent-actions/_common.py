@@ -27,18 +27,7 @@ ADDRESS_RE = re.compile(r'^0x[0-9a-fA-F]{40}$')
 COMMENT_RE = re.compile(r'^[a-zA-Z0-9-]+$')
 IPV6_CIDR128_RE = re.compile(r'^([0-9a-fA-F:]+)/128$')
 
-QM_SET_ALLOWED_KEYS = frozenset({
-    'scsi0', 'boot', 'ide2', 'agent', 'serial0', 'vga',
-    'net0', 'memory', 'cores', 'name', 'ostype', 'scsihw',
-})
-
-QM_CREATE_ALLOWED_ARGS = frozenset({
-    '--scsi0', '--boot', '--ide2', '--agent', '--serial0', '--vga',
-    '--net0', '--memory', '--cores', '--name', '--ostype', '--scsihw',
-    '--sockets', '--cpu', '--numa', '--machine', '--bios',
-})
-
-ALLOWED_ROUTE_DEVS = frozenset({'vmbr0'})
+ALLOWED_ROUTE_DEVS = frozenset({'vmbr0', 'virbr0', 'br0', 'br-ext', 'docker0'})
 WALLET_DENY_NAMES = frozenset({'admin', 'server', 'dev', 'broker'})
 
 VIRT_CUSTOMIZE_ALLOWED_OPS = frozenset({

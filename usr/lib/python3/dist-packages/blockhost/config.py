@@ -34,9 +34,6 @@ CONFIG_DIR = Path("/etc/blockhost")
 # Data directory for runtime state (VM database, etc.)
 DATA_DIR = Path("/var/lib/blockhost")
 
-# Terraform working directory
-TERRAFORM_DIR = DATA_DIR / "terraform"
-
 # Key file paths
 SERVER_KEY_FILE = CONFIG_DIR / "server.key"
 DEPLOYER_KEY_FILE = CONFIG_DIR / "deployer.key"
@@ -213,26 +210,6 @@ def get_db_file_path(fallback_dir: Optional[Path] = None) -> Path:
     return Path(config.get("db_file", str(DB_FILE)))
 
 
-def get_terraform_dir(fallback_dir: Optional[Path] = None) -> Optional[Path]:
-    """
-    Get the Terraform working directory, or None if not configured.
-
-    Reads terraform_dir from db.yaml configuration. Returns None when no
-    terraform_dir is set (e.g. non-Proxmox provisioners that don't use Terraform).
-
-    Returns:
-        Path to the Terraform directory, or None
-    """
-    try:
-        config = load_db_config(fallback_dir)
-    except FileNotFoundError:
-        return None
-    tf_dir = config.get("terraform_dir")
-    if tf_dir:
-        return Path(tf_dir)
-    return None
-
-
 def ensure_directories():
     """
     Ensure all required Blockhost directories exist.
@@ -240,16 +217,12 @@ def ensure_directories():
     Creates:
     - /etc/blockhost/
     - /var/lib/blockhost/
-    - /var/lib/blockhost/terraform/ (only if terraform_dir is configured)
 
     Note: This is typically done by the postinst script, but can be
     called manually for development/testing.
     """
     CONFIG_DIR.mkdir(mode=0o750, parents=True, exist_ok=True)
     DATA_DIR.mkdir(mode=0o750, parents=True, exist_ok=True)
-    tf_dir = get_terraform_dir()
-    if tf_dir:
-        tf_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
 
 
 # =============================================================================

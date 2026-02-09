@@ -2,7 +2,7 @@
 Provisioner Dispatcher — discover and invoke the active provisioner.
 
 Reads a provisioner manifest from a well-known path. One active provisioner
-per host. Falls back to legacy hardcoded command names when no manifest exists.
+per host. Raises RuntimeError if no manifest is installed.
 """
 
 import json
@@ -15,22 +15,6 @@ log = logging.getLogger(__name__)
 
 MANIFEST_PATH = Path("/usr/share/blockhost/provisioner.json")
 
-# Legacy command names — used when no manifest is installed (transition period)
-LEGACY_COMMANDS = {
-    "create":         "blockhost-vm-create",
-    "destroy":        "blockhost-vm-destroy",
-    "start":          "blockhost-vm-start",
-    "stop":           "blockhost-vm-stop",
-    "kill":           "blockhost-vm-kill",
-    "status":         "blockhost-vm-status",
-    "list":           "blockhost-vm-list",
-    "metrics":        "blockhost-vm-metrics",
-    "throttle":       "blockhost-vm-throttle",
-    "build-template": "blockhost-build-template",
-    "gc":             "blockhost-vm-gc",
-    "resume":         "blockhost-vm-resume",
-}
-
 
 class ProvisionerDispatcher:
     """Dispatches commands to the active provisioner."""
@@ -42,7 +26,7 @@ class ProvisionerDispatcher:
     def _load_manifest(self) -> dict:
         """Load the provisioner manifest, or return empty dict if missing."""
         if not self._manifest_path.exists():
-            log.debug("No provisioner manifest at %s, using legacy commands", self._manifest_path)
+            log.debug("No provisioner manifest at %s", self._manifest_path)
             return {}
         try:
             with open(self._manifest_path) as f:
@@ -53,7 +37,9 @@ class ProvisionerDispatcher:
 
     def get_command(self, verb: str) -> str:
         """Get the CLI command name for a provisioner verb."""
-        commands = self._manifest.get("commands", LEGACY_COMMANDS)
+        if not self._manifest:
+            raise RuntimeError("No provisioner manifest installed")
+        commands = self._manifest.get("commands", {})
         cmd = commands.get(verb)
         if not cmd:
             raise ValueError(f"Unknown provisioner command: {verb}")

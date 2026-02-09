@@ -33,12 +33,12 @@ DATA_DIR   = Path("/var/lib/blockhost")
 
 **`fallback_dir`**: Every load function accepts this. Intended for development and testing — lets scripts run without `/etc/blockhost/` existing.
 
-### Contract Violations (existing)
+### Contract Violations (resolved)
 
-| Export | Problem | Resolution |
-|--------|---------|------------|
-| `get_terraform_dir()` | Terraform is Proxmox-specific. Common shouldn't know about it. | Move to provisioner-proxmox or make generic ("provisioner working dir") |
-| `TERRAFORM_DIR` constant | Same — hardcoded `/var/lib/blockhost/terraform` | Remove from common |
+| Export | Problem | Status |
+|--------|---------|--------|
+| `get_terraform_dir()` | Terraform is Proxmox-specific | **Removed** — provisioners read `terraform_dir` from db.yaml directly |
+| `TERRAFORM_DIR` constant | Hardcoded `/var/lib/blockhost/terraform` | **Removed** from common |
 
 ---
 
@@ -155,16 +155,11 @@ This is the real interface. Everything else is a wrapper around this.
 - `RootAgentError` — base exception, agent returned `{"ok": false}`
 - `RootAgentConnectionError(RootAgentError)` — socket unreachable
 
-### Contract Violations (existing)
+### Contract Violations (resolved)
 
-| Export | Problem | Resolution |
-|--------|---------|------------|
-| `qm_start(vmid)` | Proxmox-specific. Calls `qm-start` action. | Provisioner should call `call("qm-start", vmid=vmid)` directly |
-| `qm_stop(vmid)` | Same | Same |
-| `qm_shutdown(vmid)` | Same | Same |
-| `qm_destroy(vmid)` | Same | Same |
-
-These wrappers leak Proxmox into common's public API. Consumers should use the generic `call()` with provisioner-specific action names. The wrappers can be deprecated.
+| Export | Problem | Status |
+|--------|---------|--------|
+| `qm_start/stop/shutdown/destroy` | Proxmox-specific wrappers | **Removed** — provisioners use `call()` directly |
 
 ---
 
@@ -225,17 +220,16 @@ IPV6_CIDR128_RE  = re.compile(r'^([0-9a-fA-F:]+)/128$')
 - `run(cmd: list, timeout: int = 120) -> tuple[int, str, str]` — returns `(returncode, stdout, stderr)`
 
 **Allowed Sets:**
-- `ALLOWED_ROUTE_DEVS = frozenset({'vmbr0'})`
+- `ALLOWED_ROUTE_DEVS = frozenset({'vmbr0', 'virbr0', 'br0', 'br-ext', 'docker0'})`
 - `WALLET_DENY_NAMES = frozenset({'admin', 'server', 'dev', 'broker'})`
 - `VIRT_CUSTOMIZE_ALLOWED_OPS` — validated operations for virt-customize
-- `QM_SET_ALLOWED_KEYS`, `QM_CREATE_ALLOWED_ARGS` — Proxmox-specific allow lists
 
-### Contract Violations (existing)
+### Contract Violations (resolved)
 
-| Item | Problem | Resolution |
-|------|---------|------------|
-| `ALLOWED_ROUTE_DEVS = {'vmbr0'}` | vmbr0 is Proxmox's bridge name. libvirt uses different bridge names. | Make configurable or expand the allowed set |
-| `QM_SET_ALLOWED_KEYS`, `QM_CREATE_ALLOWED_ARGS` | Proxmox-specific constants in shared _common | Move to provisioner-proxmox's action module |
+| Item | Problem | Status |
+|------|---------|--------|
+| `ALLOWED_ROUTE_DEVS = {'vmbr0'}` | vmbr0 is Proxmox-specific | **Expanded** to include common Linux bridge names |
+| `QM_SET_ALLOWED_KEYS`, `QM_CREATE_ALLOWED_ARGS` | Proxmox constants in shared code | **Removed** — moved to provisioner-proxmox's `qm.py` |
 
 ---
 
@@ -301,7 +295,7 @@ get_provisioner() -> ProvisionerDispatcher  # singleton
 | `get_command` | `(verb: str)` | `str` | Maps verb to CLI command name from manifest |
 | `run` | `(verb: str, args: list = None, **kwargs)` | `CompletedProcess` | Runs command via `subprocess.run()` |
 
-**Legacy fallback**: If no manifest exists, uses hardcoded `LEGACY_COMMANDS` dict. This should be removed (see section 9).
+**No manifest**: If no manifest exists, `get_command()` raises `RuntimeError("No provisioner manifest installed")`.
 
 ---
 
@@ -435,18 +429,18 @@ contract_address: "0x..."
 
 ---
 
-## 9. Contract Violations & Cleanup Needed
+## 9. Contract Violations — Status
 
-| # | Item | Location | Problem | Resolution |
-|---|------|----------|---------|------------|
-| 1 | `qm_start/stop/shutdown/destroy` | `root_agent.py` | Proxmox-specific wrappers in common | Deprecate. Provisioners call `call()` directly. |
-| 2 | `get_terraform_dir()` | `config.py` | Terraform is Proxmox-specific | Move to provisioner-proxmox or generalize |
-| 3 | `TERRAFORM_DIR` constant | `config.py`, `__init__.py` | Same | Remove from common |
-| 4 | `mint_nft` module | `blockhost/mint_nft.py` (if present) | Minting is engine responsibility | Move to engine |
-| 5 | `LEGACY_COMMANDS` fallback | `provisioner.py` | Hardcoded Proxmox commands when no manifest | Remove — no manifest = no provisioner |
-| 6 | `ALLOWED_ROUTE_DEVS = {'vmbr0'}` | `_common.py` | vmbr0 is Proxmox-specific bridge name | Make configurable or expand set |
-| 7 | `QM_SET_ALLOWED_KEYS`, `QM_CREATE_ALLOWED_ARGS` | `_common.py` | Proxmox constants in shared code | Move to provisioner-proxmox's `qm.py` |
-| 8 | `vmid_range` optional in db.yaml | `vm_db.py` | VMID is Proxmox-specific (libvirt uses domain names) | `allocate_vmid()` should only exist where needed |
+| # | Item | Location | Status |
+|---|------|----------|--------|
+| 1 | `qm_start/stop/shutdown/destroy` | `root_agent.py` | **Resolved** — removed. Provisioners use `call()` directly. |
+| 2 | `get_terraform_dir()` | `config.py` | **Resolved** — removed. Provisioners read `terraform_dir` from db.yaml. |
+| 3 | `TERRAFORM_DIR` constant | `config.py`, `__init__.py` | **Resolved** — removed from common. |
+| 4 | `mint_nft` module | `blockhost/mint_nft.py` | **Already resolved** — no such module exists in common. |
+| 5 | `LEGACY_COMMANDS` fallback | `provisioner.py` | **Resolved** — removed. No manifest = RuntimeError. |
+| 6 | `ALLOWED_ROUTE_DEVS = {'vmbr0'}` | `_common.py` | **Resolved** — expanded to `{'vmbr0', 'virbr0', 'br0', 'br-ext', 'docker0'}`. |
+| 7 | `QM_SET_ALLOWED_KEYS`, `QM_CREATE_ALLOWED_ARGS` | `_common.py` | **Resolved** — removed. Provisioner-proxmox defines these locally. |
+| 8 | `vmid_range` optional in db.yaml | `vm_db.py` | **Partially addressed** — optional with RuntimeError if not configured. |
 
 ---
 
@@ -454,7 +448,7 @@ contract_address: "0x..."
 
 | Package | Imports From Common | Config Files Read |
 |---------|--------------------|--------------------|
-| **blockhost-provisioner-proxmox** | config (5 functions), vm_db, root_agent (4 qm wrappers + ip6 + errors), cloud_init, mint_nft | db.yaml, web3-defaults.yaml, broker-allocation.json |
+| **blockhost-provisioner-proxmox** | config, vm_db, root_agent (`call` + ip6 + errors), cloud_init | db.yaml, web3-defaults.yaml, broker-allocation.json |
 | **blockhost-provisioner-libvirt** | (stubs — will use config, vm_db, root_agent.call, cloud_init) | db.yaml, web3-defaults.yaml, broker-allocation.json |
 | **blockhost (installer)** | config, mint_nft, provisioner dispatcher | web3-defaults.yaml |
 | **blockhost-engine** | config, vm_db, root_agent | db.yaml, web3-defaults.yaml |
