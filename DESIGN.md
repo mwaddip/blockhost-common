@@ -9,7 +9,7 @@
 3. **Python library** - Shared modules for config loading and VM database access
 4. **Root agent daemon** - Privileged operations service (systemd-managed, Unix socket IPC)
 
-This package resolves circular dependencies between `proxmox-terraform` (now `blockhost-provisioner`) and `blockhost-engine` by establishing a common foundation they both depend on.
+This package resolves circular dependencies between `proxmox-terraform` (now `blockhost-provisioner-proxmox`) and `blockhost-engine` by establishing a common foundation they both depend on.
 
 ## Package Dependency Graph
 
@@ -19,7 +19,7 @@ This package resolves circular dependencies between `proxmox-terraform` (now `bl
             +-------------+-------------+
             |                           |
             v                           v
-    libpam-web3-tools           blockhost-provisioner
+    libpam-web3-tools           blockhost-provisioner-proxmox
             |                           |
             +-------------+-------------+
                           |
@@ -39,7 +39,7 @@ proxmox-terraform <---> blockhost-engine
 ```
 blockhost-common (owns directories, templates)
          |
-blockhost-provisioner (uses configs, no shipping)
+blockhost-provisioner-proxmox (uses configs, no shipping)
          |
 blockhost-engine (populates configs via init-server.sh)
 ```
@@ -98,7 +98,7 @@ blockhost-engine (populates configs via init-server.sh)
 
 ### db.yaml
 
-**Owner:** `blockhost-common` (template), `blockhost-provisioner` (may override)
+**Owner:** `blockhost-common` (template), `blockhost-provisioner-proxmox` (may override)
 
 Contains VM provisioning settings:
 - `db_file` - Path to vms.json
@@ -319,7 +319,7 @@ Template search order: extra_dirs (if provided) → `/usr/share/blockhost/cloud-
 
 ## Migration Guide
 
-### For proxmox-terraform (becomes blockhost-provisioner)
+### For proxmox-terraform (becomes blockhost-provisioner-proxmox)
 
 1. **Remove config files:**
    - Delete `config/db.yaml`
@@ -371,7 +371,7 @@ Template search order: extra_dirs (if provided) → `/usr/share/blockhost/cloud-
 
 3. **Add dependency:**
    ```
-   Depends: blockhost-provisioner, blockhost-common (>= 0.1.0)
+   Depends: blockhost-provisioner-proxmox, blockhost-common (>= 0.1.0)
    ```
 
 ## Design Decisions

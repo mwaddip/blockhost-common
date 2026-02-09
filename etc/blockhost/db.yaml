@@ -2,7 +2,7 @@
 # This file configures the VM provisioning database and resource pools.
 #
 # Managed by: blockhost-common
-# Used by: blockhost-provisioner, blockhost-engine
+# Used by: blockhost-provisioner-proxmox, blockhost-engine
 #
 # Schema Notes:
 # - All fields are optional; sensible defaults are applied

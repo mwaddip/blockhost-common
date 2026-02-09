@@ -2,7 +2,7 @@
 # Global defaults for NFT authentication and blockchain interaction.
 #
 # Managed by: blockhost-common (template), blockhost-engine (populated)
-# Used by: blockhost-provisioner, VM cloud-init, PAM authentication
+# Used by: blockhost-provisioner-proxmox, VM cloud-init, PAM authentication
 #
 # IMPORTANT: After installation, run `blockhost-init` or manually configure
 # the contract address and deployer key before provisioning VMs.
