@@ -26,7 +26,6 @@ users:
     groups: sudo
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
-    ssh_authorized_keys: ${SSH_KEYS}
 
 write_files:
   - path: /etc/pam_web3/config.toml
