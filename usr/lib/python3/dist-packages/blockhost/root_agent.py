@@ -5,7 +5,7 @@ Usage:
     from blockhost.root_agent import call, ip6_route_add, generate_wallet
 
     call("my-action", vmid=100)
-    ip6_route_add("2001:db8::1/128", "vmbr0")
+    ip6_route_add("2001:db8::1/128", "br0")
     result = generate_wallet("hot")  # returns {"address": "0x..."}
 """
 
@@ -76,10 +76,10 @@ def _recv_exact(sock, n):
 
 # --- Convenience wrappers ---
 
-def ip6_route_add(address: str, dev: str = "vmbr0") -> dict:
+def ip6_route_add(address: str, dev: str) -> dict:
     return call("ip6-route-add", address=address, dev=dev)
 
-def ip6_route_del(address: str, dev: str = "vmbr0") -> dict:
+def ip6_route_del(address: str, dev: str) -> dict:
     return call("ip6-route-del", address=address, dev=dev)
 
 def generate_wallet(name: str) -> dict:

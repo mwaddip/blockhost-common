@@ -147,6 +147,7 @@ from blockhost.config import (
     load_db_config,       # Load db.yaml
     load_web3_config,     # Load web3-defaults.yaml
     load_broker_allocation, # Load broker-allocation.json (IPv6 prefix)
+    load_blockhost_config,  # Load blockhost.yaml
 
     # Utilities
     get_db_file_path,     # Get vms.json path from config
@@ -211,7 +212,7 @@ from blockhost.root_agent import (
 )
 
 # Usage
-ip6_route_add("2001:db8::1/128", "vmbr0")
+ip6_route_add("2001:db8::1/128", "br0")
 result = generate_wallet("hot")  # {"ok": true, "address": "0x..."}
 
 # Provisioner-specific commands via generic call()

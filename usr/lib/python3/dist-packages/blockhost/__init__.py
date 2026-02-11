@@ -27,6 +27,7 @@ from .config import (
     load_db_config,
     load_web3_config,
     load_broker_allocation,
+    load_blockhost_config,
 )
 from .vm_db import get_database, VMDatabase, MockVMDatabase, VMDatabaseBase
 from .root_agent import (
@@ -50,6 +51,7 @@ __all__ = [
     "load_db_config",
     "load_web3_config",
     "load_broker_allocation",
+    "load_blockhost_config",
     # Database classes
     "get_database",
     "VMDatabase",
