@@ -1,5 +1,5 @@
 """
-Root agent actions: firewall, disk images, wallet, addressbook.
+Root agent actions: firewall, disk images, wallet, addressbook, broker.
 """
 
 import json
@@ -151,10 +151,33 @@ def handle_addressbook_save(params):
     return {'ok': True}
 
 
+def handle_broker_renew(params):
+    alloc_file = CONFIG_DIR / 'broker-allocation.json'
+    if not alloc_file.exists():
+        return {'ok': False, 'error': 'no existing broker allocation found'}
+    try:
+        alloc = json.loads(alloc_file.read_text())
+    except (json.JSONDecodeError, IOError) as e:
+        return {'ok': False, 'error': f'failed to read broker allocation: {e}'}
+    nft_contract = alloc.get('nft_contract', '')
+    if not nft_contract:
+        return {'ok': False, 'error': 'no existing broker allocation found'}
+    rc, out, err = run([
+        'broker-client', 'renew',
+        '--nft-contract', nft_contract,
+        '--wallet-key', str(CONFIG_DIR / 'deployer.key'),
+        '--configure-wg',
+    ], timeout=120)
+    if rc != 0:
+        return {'ok': False, 'error': err or out}
+    return {'ok': True, 'output': out}
+
+
 ACTIONS = {
     'iptables-open': handle_iptables_open,
     'iptables-close': handle_iptables_close,
     'virt-customize': handle_virt_customize,
     'generate-wallet': handle_generate_wallet,
     'addressbook-save': handle_addressbook_save,
+    'broker-renew': handle_broker_renew,
 }
