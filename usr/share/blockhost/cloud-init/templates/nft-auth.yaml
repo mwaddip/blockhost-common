@@ -4,10 +4,8 @@
 #   ${VM_NAME}         - VM hostname
 #   ${SIGNING_HOST}    - Host for signing URL ([ipv6] or ipv4)
 #   ${USERNAME}        - Linux username
+#   ${WALLET_ADDRESS}  - VM owner's wallet address (0x..., bc1q..., addr1...)
 #   ${NFT_TOKEN_ID}    - Reserved NFT token ID
-#   ${CHAIN_ID}        - Blockchain chain ID
-#   ${NFT_CONTRACT}    - NFT contract address
-#   ${RPC_URL}         - JSON-RPC endpoint URL
 #   ${OTP_LENGTH}      - OTP code length
 #   ${OTP_TTL}         - OTP time-to-live in seconds
 #   ${SECRET_KEY}      - Random 64-char hex string for PAM module
@@ -20,7 +18,7 @@ packages:
 
 users:
   - name: ${USERNAME}
-    gecos: "nft=${NFT_TOKEN_ID}"
+    gecos: "wallet=${WALLET_ADDRESS},nft=${NFT_TOKEN_ID}"
     groups: sudo
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
@@ -34,38 +32,21 @@ write_files:
       secret_key = "${SECRET_KEY}"
 
       [auth]
-      mode = "nft"
-      nft_lookup = "passwd"
       signing_url = "https://${SIGNING_HOST}:8443"
-      callback_enabled = true
-      callback_grace_seconds = 10
       otp_length = ${OTP_LENGTH}
       otp_ttl_seconds = ${OTP_TTL}
-
-      [blockchain]
-      socket_path = "/run/web3-auth/web3-auth.sock"
-      chain_id = ${CHAIN_ID}
-      nft_contract = "${NFT_CONTRACT}"
-      timeout_seconds = 10
+      callback_enabled = true
+      callback_grace_seconds = 10
 
   - path: /etc/web3-auth/config.toml
     permissions: '0640'
     content: |
-      socket_path = "/run/web3-auth/web3-auth.sock"
-      backend = "jsonrpc"
-      default_chain_id = ${CHAIN_ID}
-      default_contract = "${NFT_CONTRACT}"
-
-      [jsonrpc]
-      rpc_url = "${RPC_URL}"
-      timeout_seconds = 30
-
       [https]
       port = 8443
       bind = ["::", "0.0.0.0"]
       cert_path = "/etc/libpam-web3/tls/cert.pem"
       key_path = "/etc/libpam-web3/tls/key.pem"
-      signing_page = "/usr/share/libpam-web3/signing-page/index.html"
+      signing_page_path = "/usr/share/libpam-web3/signing-page/index.html"
 
   - path: /etc/pam.d/sshd
     content: |

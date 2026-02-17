@@ -302,7 +302,7 @@ from blockhost.cloud_init import (
 path = find_template('nft-auth.yaml')
 content = render_cloud_init('nft-auth.yaml', {
     'VM_NAME': 'web-001',
-    'NFT_CONTRACT': '0x...',
+    'WALLET_ADDRESS': '0x...',
 })
 
 # List available templates
