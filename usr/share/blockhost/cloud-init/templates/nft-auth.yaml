@@ -50,8 +50,10 @@ write_files:
 
   - path: /etc/pam.d/sshd
     content: |
-      # Web3 NFT authentication for all users
+      # Web3 NFT authentication for provisioned user only
+      auth [success=ok default=ignore] pam_succeed_if.so user = ${USERNAME}
       auth [success=done default=die] pam_web3.so
+      auth required pam_deny.so
 
       # Standard account/session management
       account    required     pam_nologin.so
