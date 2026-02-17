@@ -35,18 +35,16 @@ write_files:
       signing_url = "https://${SIGNING_HOST}:8443"
       otp_length = ${OTP_LENGTH}
       otp_ttl_seconds = ${OTP_TTL}
-      callback_enabled = true
-      callback_grace_seconds = 10
 
   - path: /etc/web3-auth/config.toml
     permissions: '0640'
     content: |
       [https]
       port = 8443
-      bind = ["::", "0.0.0.0"]
+      bind = ["::"]
       cert_path = "/etc/libpam-web3/tls/cert.pem"
       key_path = "/etc/libpam-web3/tls/key.pem"
-      signing_page_path = "/usr/share/libpam-web3/signing-page/index.html"
+      signing_page_path = "/usr/share/blockhost/signing-page/index.html"
 
   - path: /etc/pam.d/sshd
     content: |
