@@ -5,7 +5,6 @@
 #   ${SIGNING_HOST}    - Host for signing URL ([ipv6] or ipv4)
 #   ${USERNAME}        - Linux username
 #   ${WALLET_ADDRESS}  - VM owner's wallet address (0x..., bc1q..., addr1...)
-#   ${NFT_TOKEN_ID}    - Reserved NFT token ID
 #   ${OTP_LENGTH}      - OTP code length
 #   ${OTP_TTL}         - OTP time-to-live in seconds
 #   ${SECRET_KEY}      - Random 64-char hex string for PAM module
@@ -18,7 +17,7 @@ packages:
 
 users:
   - name: ${USERNAME}
-    gecos: "wallet=${WALLET_ADDRESS},nft=${NFT_TOKEN_ID}"
+    gecos: "wallet=${WALLET_ADDRESS}"
     groups: sudo
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
