@@ -250,7 +250,7 @@ ACTIONS = {
 - Only stdlib imports — no third-party dependencies
 
 **Core modules** (shipped by blockhost-common):
-- `networking.py` — `ip6-route-add`, `ip6-route-del`
+- `networking.py` — `ip6-route-add`, `ip6-route-del`, `bridge-port-isolate`
 - `system.py` — `iptables-open`, `iptables-close`, `virt-customize`, `generate-wallet`, `addressbook-save`, `broker-renew`
 
 **Provisioner modules** (shipped by provisioner packages):
