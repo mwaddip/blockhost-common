@@ -12,16 +12,8 @@
 
 hostname: ${VM_NAME}
 
-apt:
-  sources:
-    nodesource:
-      source: "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main"
-      keyid: "9FD3B784BC1C6FC31A8A0A1C1655A0AB68576280"
-      keyserver: "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
-
 packages:
   - qemu-guest-agent
-  - nodejs
 
 users:
   - name: ${USERNAME}
