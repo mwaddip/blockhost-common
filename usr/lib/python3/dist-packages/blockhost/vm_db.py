@@ -24,9 +24,8 @@ Usage:
         wallet_address="0x..."
     )
 
-    # Reserve and mint NFT
-    token_id = db.reserve_nft_token_id("web-001")
-    db.mark_nft_minted(token_id, "0x...")
+    # Record minted NFT on VM
+    db.set_nft_minted("web-001", token_id=1)
 """
 
 import fcntl
@@ -437,79 +436,17 @@ class VMDatabaseBase(ABC):
 
         return vms
 
-    def reserve_nft_token_id(self, vm_name: str, token_id: Optional[int] = None) -> int:
-        """Reserve an NFT token ID for a VM.
-
-        Args:
-            vm_name: Name of the VM to associate with the token
-            token_id: Specific token ID to reserve (from contract query).
-                      If None, auto-allocates the next sequential ID.
-
-        Returns:
-            The reserved token ID
-
-        Raises:
-            ValueError: If token_id already exists with non-failed status
-        """
-        result = [None]
+    def set_nft_minted(self, vm_name: str, token_id: int) -> None:
+        """Record a minted NFT token on a VM record."""
 
         def mutator(db):
-            db.setdefault("reserved_nft_tokens", {})
-            tid = token_id
-
-            if tid is None:
-                # Auto-allocate: find next available ID
-                reserved = db.get("reserved_nft_tokens", {})
-                tid = max([int(k) for k in reserved.keys()] + [-1]) + 1
-
-            key = str(tid)
-            existing = db["reserved_nft_tokens"].get(key)
-            if existing and existing.get("status") != "failed":
-                raise ValueError(
-                    f"NFT token {tid} already reserved (status: {existing['status']})"
-                )
-
-            db["reserved_nft_tokens"][key] = {
-                "vm_name": vm_name,
-                "status": "reserved",
-                "reserved_at": datetime.now(timezone.utc).isoformat(),
-            }
-            result[0] = tid
+            if vm_name not in db["vms"]:
+                raise ValueError(f"VM '{vm_name}' not found")
+            db["vms"][vm_name]["nft_token_id"] = token_id
+            db["vms"][vm_name]["nft_minted"] = True
+            db["vms"][vm_name]["nft_minted_at"] = datetime.now(timezone.utc).isoformat()
 
         self._atomic_update(mutator)
-        return result[0]
-
-    def mark_nft_minted(self, token_id: int, owner_wallet: str) -> None:
-        """Mark an NFT token as successfully minted."""
-
-        def mutator(db):
-            key = str(token_id)
-            if key not in db.get("reserved_nft_tokens", {}):
-                raise ValueError(f"NFT token {token_id} not found")
-
-            db["reserved_nft_tokens"][key]["status"] = "minted"
-            db["reserved_nft_tokens"][key]["owner_wallet"] = owner_wallet
-            db["reserved_nft_tokens"][key]["minted_at"] = datetime.now(timezone.utc).isoformat()
-
-        self._atomic_update(mutator)
-
-    def mark_nft_failed(self, token_id: int) -> None:
-        """Mark an NFT token reservation as failed."""
-
-        def mutator(db):
-            key = str(token_id)
-            if key not in db.get("reserved_nft_tokens", {}):
-                raise ValueError(f"NFT token {token_id} not found")
-
-            db["reserved_nft_tokens"][key]["status"] = "failed"
-            db["reserved_nft_tokens"][key]["failed_at"] = datetime.now(timezone.utc).isoformat()
-
-        self._atomic_update(mutator)
-
-    def get_nft_token(self, token_id: int) -> Optional[dict]:
-        """Get NFT token info by ID."""
-        db = self._read_db()
-        return db.get("reserved_nft_tokens", {}).get(str(token_id))
 
 
 class VMDatabase(VMDatabaseBase):
@@ -558,7 +495,6 @@ class VMDatabase(VMDatabaseBase):
                 "next_vmid": self.vmid_range["start"] if self.vmid_range else 0,
                 "allocated_ips": [],
                 "allocated_ipv6": [],
-                "reserved_nft_tokens": {},
             }
             self._write_db_unlocked(initial_db)
 
@@ -665,7 +601,6 @@ class MockVMDatabase(VMDatabaseBase):
                 "next_vmid": self.vmid_range["start"] if self.vmid_range else 0,
                 "allocated_ips": [],
                 "allocated_ipv6": [],
-                "reserved_nft_tokens": {},
             }
             self._write_db(initial_db)
 

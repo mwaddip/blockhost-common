@@ -184,9 +184,8 @@ vm = db.register_vm(
     expiry_days=30,
 )
 
-# NFT token management
-token_id = db.reserve_nft_token_id("web-001", token_id=5)  # Or auto-allocate if None
-db.mark_nft_minted(token_id, "0x...")
+# Record minted NFT on VM
+db.set_nft_minted("web-001", token_id=1)
 
 # VM lifecycle (two-phase garbage collection)
 db.mark_suspended("web-001")       # Phase 1: suspend expired VM
