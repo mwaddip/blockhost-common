@@ -10,7 +10,7 @@ from _common import (
     COMMENT_RE,
     SHORT_NAME_RE,
     NAME_RE,
-    ADDRESS_RE,
+    is_valid_address,
     WALLET_DENY_NAMES,
     VIRT_CUSTOMIZE_ALLOWED_OPS,
     log,
@@ -136,7 +136,7 @@ def handle_addressbook_save(params):
         if not isinstance(entry, dict):
             return {'ok': False, 'error': f'Entry {name} must be a dict'}
         addr = entry.get('address', '')
-        if not ADDRESS_RE.match(addr):
+        if not is_valid_address(addr):
             return {'ok': False, 'error': f'Invalid address for {name}: {addr}'}
         keyfile = entry.get('keyfile')
         if keyfile and not keyfile.startswith('/etc/blockhost/'):
