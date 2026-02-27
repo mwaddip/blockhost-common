@@ -38,7 +38,7 @@ IPV6_CIDR128_RE = re.compile(r'^([0-9a-fA-F:]+)/128$')
 
 ALLOWED_ROUTE_DEVS = frozenset({'vmbr0', 'virbr0', 'br0', 'br-ext', 'docker0'})
 TAP_DEV_RE = re.compile(r'^tap\d+i\d+$')
-WALLET_DENY_NAMES = frozenset({'admin', 'server', 'dev', 'broker'})
+
 
 VIRT_CUSTOMIZE_ALLOWED_OPS = frozenset({
     '--install', '--run-command', '--copy-in', '--upload',

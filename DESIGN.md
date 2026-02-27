@@ -204,7 +204,6 @@ from blockhost.root_agent import (
     call,                 # Send arbitrary command to root agent
     ip6_route_add,       # Add IPv6 route
     ip6_route_del,       # Remove IPv6 route
-    generate_wallet,     # Generate a new wallet
     addressbook_save,    # Save addressbook entries
     RootAgentError,      # Error returned by daemon
     RootAgentConnectionError,  # Cannot connect to socket
@@ -212,8 +211,6 @@ from blockhost.root_agent import (
 
 # Usage
 ip6_route_add("2001:db8::1/128", "br0")
-result = generate_wallet("hot")  # {"ok": true, "address": "0x..."}
-
 # Provisioner-specific commands via generic call()
 call("qm-start", vmid=100)
 call("my-action", timeout=60, key="value")

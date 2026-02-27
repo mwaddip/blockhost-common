@@ -33,7 +33,7 @@ from .vm_db import get_database, VMDatabase, MockVMDatabase, VMDatabaseBase
 from .root_agent import (
     call as root_agent_call,
     ip6_route_add, ip6_route_del,
-    generate_wallet, addressbook_save,
+    addressbook_save,
     RootAgentError, RootAgentConnectionError,
 )
 from .provisioner import get_provisioner, ProvisionerDispatcher
@@ -61,7 +61,6 @@ __all__ = [
     "root_agent_call",
     "ip6_route_add",
     "ip6_route_del",
-    "generate_wallet",
     "addressbook_save",
     "RootAgentError",
     "RootAgentConnectionError",
