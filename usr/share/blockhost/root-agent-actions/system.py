@@ -11,7 +11,6 @@ from _common import (
     SHORT_NAME_RE,
     NAME_RE,
     is_valid_address,
-    WALLET_DENY_NAMES,
     VIRT_CUSTOMIZE_ALLOWED_OPS,
     log,
     run,
@@ -81,50 +80,6 @@ def handle_virt_customize(params):
     return {'ok': True, 'output': out}
 
 
-def handle_generate_wallet(params):
-    import grp
-    name = params.get('name', '')
-    if not SHORT_NAME_RE.match(name):
-        return {'ok': False, 'error': f'Invalid wallet name: {name}'}
-    if name in WALLET_DENY_NAMES:
-        return {'ok': False, 'error': f'Reserved name: {name}'}
-    keyfile = CONFIG_DIR / f'{name}.key'
-    if keyfile.exists():
-        return {'ok': False, 'error': f'Key file already exists: {keyfile}'}
-    rc, out, err = run(['cast', 'wallet', 'new'], timeout=30)
-    if rc != 0:
-        return {'ok': False, 'error': f'cast wallet new failed: {err}'}
-    address = None
-    private_key = None
-    for line in out.splitlines():
-        line = line.strip()
-        if line.startswith('Address:'):
-            address = line.split(':', 1)[1].strip()
-        elif line.lower().startswith('private key:'):
-            private_key = line.split(':', 1)[1].strip()
-    if not address or not private_key:
-        return {'ok': False, 'error': f'Failed to parse cast wallet output: {out}'}
-    raw_key = private_key[2:] if private_key.startswith('0x') else private_key
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    keyfile.write_text(raw_key)
-    gid = grp.getgrnam('blockhost').gr_gid
-    os.chown(str(keyfile), 0, gid)
-    os.chmod(str(keyfile), 0o640)
-    ab_file = CONFIG_DIR / 'addressbook.json'
-    addressbook = {}
-    if ab_file.exists():
-        try:
-            addressbook = json.loads(ab_file.read_text())
-        except (json.JSONDecodeError, IOError):
-            pass
-    addressbook[name] = {'address': address, 'keyfile': str(keyfile)}
-    ab_file.write_text(json.dumps(addressbook, indent=2))
-    os.chown(str(ab_file), 0, gid)
-    os.chmod(str(ab_file), 0o640)
-    log.info('Generated wallet %s: %s', name, address)
-    return {'ok': True, 'address': address}
-
-
 def handle_addressbook_save(params):
     import grp
     entries = params.get('entries', {})
@@ -177,7 +132,6 @@ ACTIONS = {
     'iptables-open': handle_iptables_open,
     'iptables-close': handle_iptables_close,
     'virt-customize': handle_virt_customize,
-    'generate-wallet': handle_generate_wallet,
     'addressbook-save': handle_addressbook_save,
     'broker-renew': handle_broker_renew,
 }

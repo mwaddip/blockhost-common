@@ -32,10 +32,12 @@ def is_valid_address(addr):
     if not isinstance(addr, str) or not addr:
         return False
     return bool(_HEX_ADDRESS_RE.match(addr) or _BECH32_ADDRESS_RE.match(addr))
+
 COMMENT_RE = re.compile(r'^[a-zA-Z0-9-]+$')
 IPV6_CIDR128_RE = re.compile(r'^([0-9a-fA-F:]+)/128$')
 
 ALLOWED_ROUTE_DEVS = frozenset({'vmbr0', 'virbr0', 'br0', 'br-ext', 'docker0'})
+TAP_DEV_RE = re.compile(r'^tap\d+i\d+$')
 WALLET_DENY_NAMES = frozenset({'admin', 'server', 'dev', 'broker'})
 
 VIRT_CUSTOMIZE_ALLOWED_OPS = frozenset({
@@ -58,7 +60,7 @@ def validate_ipv6_128(address):
 
 
 def validate_dev(dev):
-    if dev not in ALLOWED_ROUTE_DEVS:
+    if dev not in ALLOWED_ROUTE_DEVS and not TAP_DEV_RE.match(dev):
         raise ValueError(f'Device not allowed: {dev}')
     return dev
 

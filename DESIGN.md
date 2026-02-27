@@ -250,7 +250,7 @@ ACTIONS = {
 
 **Core modules** (shipped by blockhost-common):
 - `networking.py` — `ip6-route-add`, `ip6-route-del`, `bridge-port-isolate`
-- `system.py` — `iptables-open`, `iptables-close`, `virt-customize`, `generate-wallet`, `addressbook-save`, `broker-renew`
+- `system.py` — `iptables-open`, `iptables-close`, `virt-customize`, `addressbook-save`, `broker-renew`
 
 **Provisioner modules** (shipped by provisioner packages):
 - e.g. `qm.py` — `qm-start`, `qm-stop`, `qm-create`, etc.
