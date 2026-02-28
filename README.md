@@ -96,4 +96,4 @@ See [DESIGN.md](DESIGN.md) for architecture details and migration guide.
 - `libpam-web3` - PAM module for NFT authentication (installed on VMs)
 - `libpam-web3-tools` - CLI tools and signing page
 - `blockhost-provisioner-proxmox` - VM provisioning scripts (Terraform)
-- `blockhost-engine` - Blockchain event monitor and orchestrator
+- `blockhost-engine-evm` - EVM blockchain event monitor and orchestrator

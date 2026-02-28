@@ -9,7 +9,7 @@
 3. **Python library** - Shared modules for config loading and VM database access
 4. **Root agent daemon** - Privileged operations service (systemd-managed, Unix socket IPC)
 
-This package resolves circular dependencies between `proxmox-terraform` (now `blockhost-provisioner-proxmox`) and `blockhost-engine` by establishing a common foundation they both depend on.
+This package resolves circular dependencies between `proxmox-terraform` (now `blockhost-provisioner-proxmox`) and `blockhost-engine-evm` by establishing a common foundation they both depend on.
 
 ## Package Dependency Graph
 
@@ -24,13 +24,13 @@ This package resolves circular dependencies between `proxmox-terraform` (now `bl
             +-------------+-------------+
                           |
                           v
-                   blockhost-engine
+                   blockhost-engine-evm
 ```
 
 ### Before (Circular)
 
 ```
-proxmox-terraform <---> blockhost-engine
+proxmox-terraform <---> blockhost-engine-evm
   (ships configs)        (creates configs)
 ```
 
@@ -41,7 +41,7 @@ blockhost-common (owns directories, templates)
          |
 blockhost-provisioner-proxmox (uses configs, no shipping)
          |
-blockhost-engine (populates configs via init-server.sh)
+blockhost-engine-evm (populates configs via init-server.sh)
 ```
 
 ## Directory Structure
@@ -84,7 +84,7 @@ blockhost-engine (populates configs via init-server.sh)
 └── blockhost-root-agent.service    # Systemd unit for root agent daemon
 ```
 
-### Created by blockhost-engine init
+### Created by blockhost-engine-evm init
 
 ```
 /etc/blockhost/
@@ -111,7 +111,7 @@ Contains VM provisioning settings:
 
 ### web3-defaults.yaml
 
-**Owner:** `blockhost-common` (template), `blockhost-engine` (populated by init)
+**Owner:** `blockhost-common` (template), `blockhost-engine-evm` (populated by init)
 
 Contains blockchain settings:
 - `blockchain.chain_id` - Ethereum chain ID
@@ -123,7 +123,7 @@ Contains blockchain settings:
 
 ### blockhost.yaml
 
-**Owner:** `blockhost-engine` (created by init-server.sh)
+**Owner:** `blockhost-engine-evm` (created by init-server.sh)
 
 Contains server-specific settings:
 - `public_secret` - Message users sign
@@ -343,7 +343,7 @@ Template search order: extra_dirs (if provided) → `/usr/share/blockhost/cloud-
    Depends: blockhost-common (>= 0.1.0)
    ```
 
-### For blockhost-engine
+### For blockhost-engine-evm
 
 1. **Update init-server.sh:**
    - Don't create `/etc/blockhost/` (already exists)
@@ -388,11 +388,11 @@ Template search order: extra_dirs (if provided) → `/usr/share/blockhost/cloud-
 
 ### 3. Config file population
 
-**Decision:** blockhost-common ships templates, blockhost-engine populates.
+**Decision:** blockhost-common ships templates, blockhost-engine-evm populates.
 
 **Rationale:**
 - blockhost-common has no runtime dependencies
-- blockhost-engine already has init-server.sh
+- blockhost-engine-evm already has init-server.sh
 - Clear separation: structure vs. values
 
 ### 4. Development mode fallback
