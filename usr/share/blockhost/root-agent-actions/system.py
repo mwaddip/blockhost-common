@@ -58,7 +58,7 @@ def handle_iptables_close(params):
 
 
 def handle_virt_customize(params):
-    image_path = params.get('image_path', '')
+    image_path = os.path.realpath(params.get('image_path', ''))
     commands = params.get('commands', [])
     if not (image_path.startswith('/var/lib/blockhost/') or image_path.startswith('/tmp/')):
         return {'ok': False, 'error': 'image_path must be under /var/lib/blockhost/ or /tmp/'}
