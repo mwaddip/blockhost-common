@@ -2,11 +2,10 @@
 Root Agent Client — call the privileged root agent daemon via Unix socket.
 
 Usage:
-    from blockhost.root_agent import call, ip6_route_add, generate_wallet
+    from blockhost.root_agent import call, ip6_route_add
 
     call("my-action", vmid=100)
     ip6_route_add("2001:db8::1/128", "br0")
-    result = generate_wallet("hot")  # returns {"address": "0x..."}
 """
 
 import json
@@ -81,10 +80,6 @@ def ip6_route_add(address: str, dev: str) -> dict:
 
 def ip6_route_del(address: str, dev: str) -> dict:
     return call("ip6-route-del", address=address, dev=dev)
-
-def generate_wallet(name: str) -> dict:
-    """Generate a new wallet. Returns {"ok": true, "address": "0x..."}."""
-    return call("generate-wallet", name=name)
 
 def addressbook_save(entries: dict) -> dict:
     return call("addressbook-save", entries=entries)

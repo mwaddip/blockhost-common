@@ -23,12 +23,22 @@ VMID_MAX = 999999
 NAME_RE = re.compile(r'^[a-z0-9-]{1,64}$')
 SHORT_NAME_RE = re.compile(r'^[a-z0-9-]{1,32}$')
 STORAGE_RE = re.compile(r'^[a-z0-9-]+$')
-ADDRESS_RE = re.compile(r'^0x[0-9a-fA-F]{40}$')
+_HEX_ADDRESS_RE = re.compile(r'^0x[0-9a-fA-F]{40,128}$')
+_BECH32_ADDRESS_RE = re.compile(r'^[a-z][a-z0-9]{0,9}1[02-9ac-hj-np-z]{39,90}$')
+
+
+def is_valid_address(addr):
+    """Structural address validation — chain-agnostic."""
+    if not isinstance(addr, str) or not addr:
+        return False
+    return bool(_HEX_ADDRESS_RE.match(addr) or _BECH32_ADDRESS_RE.match(addr))
+
 COMMENT_RE = re.compile(r'^[a-zA-Z0-9-]+$')
 IPV6_CIDR128_RE = re.compile(r'^([0-9a-fA-F:]+)/128$')
 
 ALLOWED_ROUTE_DEVS = frozenset({'vmbr0', 'virbr0', 'br0', 'br-ext', 'docker0'})
-WALLET_DENY_NAMES = frozenset({'admin', 'server', 'dev', 'broker'})
+TAP_DEV_RE = re.compile(r'^tap\d+i\d+$')
+
 
 VIRT_CUSTOMIZE_ALLOWED_OPS = frozenset({
     '--install', '--run-command', '--copy-in', '--upload',
@@ -50,7 +60,7 @@ def validate_ipv6_128(address):
 
 
 def validate_dev(dev):
-    if dev not in ALLOWED_ROUTE_DEVS:
+    if dev not in ALLOWED_ROUTE_DEVS and not TAP_DEV_RE.match(dev):
         raise ValueError(f'Device not allowed: {dev}')
     return dev
 

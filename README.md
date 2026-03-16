@@ -45,7 +45,7 @@ journalctl -u blockhost-root-agent
 ```python
 from blockhost.config import load_db_config, load_web3_config
 from blockhost.vm_db import get_database
-from blockhost.root_agent import call, generate_wallet
+from blockhost.root_agent import call
 from blockhost.provisioner import get_provisioner
 from blockhost.cloud_init import render_cloud_init
 
@@ -59,7 +59,6 @@ vmid = db.allocate_vmid()
 
 # Call root agent daemon (requires root-agent.sock)
 call("qm-start", vmid=vmid)       # Provisioner-specific actions via generic call()
-wallet = generate_wallet("hot")
 
 # Provisioner dispatcher (discovers active backend via manifest)
 p = get_provisioner()
@@ -97,4 +96,4 @@ See [DESIGN.md](DESIGN.md) for architecture details and migration guide.
 - `libpam-web3` - PAM module for NFT authentication (installed on VMs)
 - `libpam-web3-tools` - CLI tools and signing page
 - `blockhost-provisioner-proxmox` - VM provisioning scripts (Terraform)
-- `blockhost-engine` - Blockchain event monitor and orchestrator
+- `blockhost-engine-evm` - EVM blockchain event monitor and orchestrator

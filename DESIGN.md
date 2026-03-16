@@ -9,7 +9,7 @@
 3. **Python library** - Shared modules for config loading and VM database access
 4. **Root agent daemon** - Privileged operations service (systemd-managed, Unix socket IPC)
 
-This package resolves circular dependencies between `proxmox-terraform` (now `blockhost-provisioner-proxmox`) and `blockhost-engine` by establishing a common foundation they both depend on.
+This package resolves circular dependencies between `proxmox-terraform` (now `blockhost-provisioner-proxmox`) and `blockhost-engine-evm` by establishing a common foundation they both depend on.
 
 ## Package Dependency Graph
 
@@ -24,13 +24,13 @@ This package resolves circular dependencies between `proxmox-terraform` (now `bl
             +-------------+-------------+
                           |
                           v
-                   blockhost-engine
+                   blockhost-engine-evm
 ```
 
 ### Before (Circular)
 
 ```
-proxmox-terraform <---> blockhost-engine
+proxmox-terraform <---> blockhost-engine-evm
   (ships configs)        (creates configs)
 ```
 
@@ -41,7 +41,7 @@ blockhost-common (owns directories, templates)
          |
 blockhost-provisioner-proxmox (uses configs, no shipping)
          |
-blockhost-engine (populates configs via init-server.sh)
+blockhost-engine-evm (populates configs via init-server.sh)
 ```
 
 ## Directory Structure
@@ -84,7 +84,7 @@ blockhost-engine (populates configs via init-server.sh)
 └── blockhost-root-agent.service    # Systemd unit for root agent daemon
 ```
 
-### Created by blockhost-engine init
+### Created by blockhost-engine-evm init
 
 ```
 /etc/blockhost/
@@ -111,7 +111,7 @@ Contains VM provisioning settings:
 
 ### web3-defaults.yaml
 
-**Owner:** `blockhost-common` (template), `blockhost-engine` (populated by init)
+**Owner:** `blockhost-common` (template), `blockhost-engine-evm` (populated by init)
 
 Contains blockchain settings:
 - `blockchain.chain_id` - Ethereum chain ID
@@ -123,7 +123,7 @@ Contains blockchain settings:
 
 ### blockhost.yaml
 
-**Owner:** `blockhost-engine` (created by init-server.sh)
+**Owner:** `blockhost-engine-evm` (created by init-server.sh)
 
 Contains server-specific settings:
 - `public_secret` - Message users sign
@@ -184,9 +184,8 @@ vm = db.register_vm(
     expiry_days=30,
 )
 
-# NFT token management
-token_id = db.reserve_nft_token_id("web-001", token_id=5)  # Or auto-allocate if None
-db.mark_nft_minted(token_id, "0x...")
+# Record minted NFT on VM
+db.set_nft_minted("web-001", token_id=1)
 
 # VM lifecycle (two-phase garbage collection)
 db.mark_suspended("web-001")       # Phase 1: suspend expired VM
@@ -205,7 +204,6 @@ from blockhost.root_agent import (
     call,                 # Send arbitrary command to root agent
     ip6_route_add,       # Add IPv6 route
     ip6_route_del,       # Remove IPv6 route
-    generate_wallet,     # Generate a new wallet
     addressbook_save,    # Save addressbook entries
     RootAgentError,      # Error returned by daemon
     RootAgentConnectionError,  # Cannot connect to socket
@@ -213,8 +211,6 @@ from blockhost.root_agent import (
 
 # Usage
 ip6_route_add("2001:db8::1/128", "br0")
-result = generate_wallet("hot")  # {"ok": true, "address": "0x..."}
-
 # Provisioner-specific commands via generic call()
 call("qm-start", vmid=100)
 call("my-action", timeout=60, key="value")
@@ -250,8 +246,8 @@ ACTIONS = {
 - Only stdlib imports — no third-party dependencies
 
 **Core modules** (shipped by blockhost-common):
-- `networking.py` — `ip6-route-add`, `ip6-route-del`
-- `system.py` — `iptables-open`, `iptables-close`, `virt-customize`, `generate-wallet`, `addressbook-save`, `broker-renew`
+- `networking.py` — `ip6-route-add`, `ip6-route-del`, `bridge-port-isolate`
+- `system.py` — `iptables-open`, `iptables-close`, `virt-customize`, `addressbook-save`, `broker-renew`
 
 **Provisioner modules** (shipped by provisioner packages):
 - e.g. `qm.py` — `qm-start`, `qm-stop`, `qm-create`, etc.
@@ -302,7 +298,7 @@ from blockhost.cloud_init import (
 path = find_template('nft-auth.yaml')
 content = render_cloud_init('nft-auth.yaml', {
     'VM_NAME': 'web-001',
-    'NFT_CONTRACT': '0x...',
+    'WALLET_ADDRESS': '0x...',
 })
 
 # List available templates
@@ -347,7 +343,7 @@ Template search order: extra_dirs (if provided) → `/usr/share/blockhost/cloud-
    Depends: blockhost-common (>= 0.1.0)
    ```
 
-### For blockhost-engine
+### For blockhost-engine-evm
 
 1. **Update init-server.sh:**
    - Don't create `/etc/blockhost/` (already exists)
@@ -392,11 +388,11 @@ Template search order: extra_dirs (if provided) → `/usr/share/blockhost/cloud-
 
 ### 3. Config file population
 
-**Decision:** blockhost-common ships templates, blockhost-engine populates.
+**Decision:** blockhost-common ships templates, blockhost-engine-evm populates.
 
 **Rationale:**
 - blockhost-common has no runtime dependencies
-- blockhost-engine already has init-server.sh
+- blockhost-engine-evm already has init-server.sh
 - Clear separation: structure vs. values
 
 ### 4. Development mode fallback
