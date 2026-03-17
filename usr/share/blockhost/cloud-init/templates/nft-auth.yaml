@@ -1,7 +1,8 @@
 #cloud-config
 # NFT Authentication Cloud-Init Template
 # Variables (substituted by vm-generator.py):
-#   ${VM_NAME}         - VM hostname
+#   ${VM_NAME}         - VM hostname (short name)
+#   ${VM_FQDN}         - VM fully-qualified domain name (empty if no broker DNS)
 #   ${SIGNING_HOST}    - Host for signing URL ([ipv6] or ipv4)
 #   ${USERNAME}        - Linux username
 #   ${WALLET_ADDRESS}  - VM owner's wallet address (0x..., bc1q..., addr1...)
@@ -11,6 +12,8 @@
 #   ${SIGNING_DOMAIN}  - FQDN for Let's Encrypt (empty = self-signed cert)
 
 hostname: ${VM_NAME}
+fqdn: ${VM_FQDN}
+manage_etc_hosts: true
 
 packages:
   - qemu-guest-agent
