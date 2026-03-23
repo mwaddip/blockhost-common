@@ -111,15 +111,12 @@ Contains VM provisioning settings:
 
 ### web3-defaults.yaml
 
-**Owner:** `blockhost-common` (template), `blockhost-engine-evm` (populated by init)
+**Owner:** `blockhost-common` (skeleton), engine finalization (populates `blockchain:` section)
 
-Contains blockchain settings:
-- `blockchain.chain_id` - Ethereum chain ID
-- `blockchain.nft_contract` - Contract address (empty until deployment)
-- `blockchain.rpc_url` - JSON-RPC endpoint
+Contains chain-agnostic defaults and an empty `blockchain:` section:
+- `blockchain` - Empty `{}` — engine finalization writes chain-specific keys
 - `deployer.private_key_file` - Path to deployer key
-- `signing_page.*` - Signing page settings
-- `auth.*` - OTP settings
+- `auth.*` - OTP settings (used by libpam-web3 core)
 
 ### blockhost.yaml
 
