@@ -24,7 +24,7 @@ NAME_RE = re.compile(r'^[a-z0-9-]{1,64}$')
 SHORT_NAME_RE = re.compile(r'^[a-z0-9-]{1,32}$')
 STORAGE_RE = re.compile(r'^[a-z0-9-]+$')
 _HEX_ADDRESS_RE = re.compile(r'^0x[0-9a-fA-F]{40,128}$')
-_BECH32_ADDRESS_RE = re.compile(r'^[a-z][a-z0-9]{0,9}1[02-9ac-hj-np-z]{39,90}$')
+_BECH32_ADDRESS_RE = re.compile(r'^[a-z][a-z0-9_]{0,9}1[02-9ac-hj-np-z]{39,98}$')
 
 
 def is_valid_address(addr):
