@@ -81,9 +81,16 @@ write_files:
       AuthenticationMethods keyboard-interactive
 
 runcmd:
+  # Install Node.js 22 LTS (required by libpam-web3 chain plugin auth-svc)
+  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  - apt-get install -y nodejs
+
   - systemctl enable --now qemu-guest-agent
   - systemctl daemon-reload
-  - systemctl enable --now web3-auth-svc
+  - |
+    for svc in /lib/systemd/system/web3-auth-svc-*.service; do
+      [ -f "$svc" ] && systemctl enable --now "$(basename "$svc")" || true
+    done
 
   # Upgrade to Let's Encrypt cert if domain available
   - |
@@ -92,7 +99,9 @@ runcmd:
       # Point web3-auth-svc at the Let's Encrypt cert
       ln -sf /etc/letsencrypt/live/${SIGNING_DOMAIN}/fullchain.pem /etc/libpam-web3/tls/cert.pem
       ln -sf /etc/letsencrypt/live/${SIGNING_DOMAIN}/privkey.pem /etc/libpam-web3/tls/key.pem
-      systemctl restart web3-auth-svc
+      for svc in /lib/systemd/system/web3-auth-svc-*.service; do
+        [ -f "$svc" ] && systemctl restart "$(basename "$svc")" || true
+      done
     fi
 
   - systemctl restart sshd
