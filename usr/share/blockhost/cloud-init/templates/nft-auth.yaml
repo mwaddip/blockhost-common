@@ -37,6 +37,7 @@ write_files:
       signing_url = "https://${SIGNING_HOST}:8443"
       otp_length = ${OTP_LENGTH}
       otp_ttl_seconds = ${OTP_TTL}
+      use_tls = true
 
   - path: /etc/web3-auth/config.toml
     permissions: '0640'

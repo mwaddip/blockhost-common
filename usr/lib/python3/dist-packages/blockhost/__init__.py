@@ -38,6 +38,7 @@ from .root_agent import (
 )
 from .provisioner import get_provisioner, ProvisionerDispatcher
 from .cloud_init import render_cloud_init, find_template, list_templates
+from .network_hook import get_connection_endpoint, cleanup as network_cleanup
 
 __all__ = [
     # Version
@@ -71,4 +72,7 @@ __all__ = [
     "render_cloud_init",
     "find_template",
     "list_templates",
+    # Network hook
+    "get_connection_endpoint",
+    "network_cleanup",
 ]

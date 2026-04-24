@@ -48,6 +48,7 @@ from blockhost.vm_db import get_database
 from blockhost.root_agent import call
 from blockhost.provisioner import get_provisioner
 from blockhost.cloud_init import render_cloud_init
+from blockhost.network_hook import get_connection_endpoint, cleanup
 
 # Load configuration
 db_config = load_db_config()
@@ -66,6 +67,10 @@ cmd = p.get_command('create')        # Requires provisioner manifest
 
 # Cloud-init template rendering
 content = render_cloud_init('nft-auth.yaml', {'VM_NAME': 'web-001'})
+
+# Network-mode-agnostic connection endpoint
+host = get_connection_endpoint('web-001', '192.168.122.50', mode='onion')
+cleanup('web-001', mode='onion')
 ```
 
 ## Development

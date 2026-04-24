@@ -60,6 +60,7 @@ blockhost-engine-evm (populates configs via init-server.sh)
 ├── __init__.py                     # Package exports
 ├── cloud_init.py                   # Cloud-init template discovery and rendering
 ├── config.py                       # Path constants, config loading
+├── network_hook.py                 # Connection endpoint resolution (broker/manual/onion)
 ├── provisioner.py                  # Provisioner dispatcher (pluggable backends)
 ├── root_agent.py                   # Root agent daemon client
 └── vm_db.py                        # VM database abstraction
@@ -244,7 +245,7 @@ ACTIONS = {
 
 **Core modules** (shipped by blockhost-common):
 - `networking.py` — `ip6-route-add`, `ip6-route-del`, `bridge-port-isolate`
-- `system.py` — `iptables-open`, `iptables-close`, `virt-customize`, `addressbook-save`, `broker-renew`
+- `system.py` — `iptables-open`, `iptables-close`, `virt-customize`, `addressbook-save`, `broker-renew`, `tor-hidden-service-add`, `tor-hidden-service-remove`
 
 **Provisioner modules** (shipped by provisioner packages):
 - e.g. `qm.py` — `qm-start`, `qm-stop`, `qm-create`, etc.
@@ -303,6 +304,23 @@ names = list_templates()  # ['devbox.yaml', 'nft-auth.yaml']
 ```
 
 Template search order: extra_dirs (if provided) → `/usr/share/blockhost/cloud-init/templates/` → `cloud-init/templates/` (dev fallback). Uses `string.Template.safe_substitute` so shell variables in templates are preserved.
+
+### blockhost.network_hook
+
+```python
+from blockhost.network_hook import (
+    get_connection_endpoint,  # Resolve subscriber-facing host for a VM
+    cleanup,                  # Release per-VM network resources on destroy
+)
+
+# Modes: "broker" / "manual" pass the bridge_ip through. "onion" creates a Tor
+# hidden service via the root agent, pushes the .onion into the VM via the
+# provisioner's guest-exec command, and returns the .onion address.
+host = get_connection_endpoint('web-001', '192.168.122.50', mode='onion')
+cleanup('web-001', mode='onion')
+```
+
+The onion path uses two root agent actions (`tor-hidden-service-add`, `tor-hidden-service-remove`) shipped in `system.py`, and the provisioner-supplied `guest-exec` command resolved via `ProvisionerDispatcher.get_command("guest-exec")`.
 
 ## Migration Guide
 
