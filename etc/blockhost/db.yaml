@@ -16,17 +16,6 @@ db_file: /var/lib/blockhost/vms.json
 # Terraform working directory — set by provisioner if needed (optional)
 # terraform_dir: /var/lib/blockhost/terraform
 
-# Field name mappings (optional - defaults shown below)
-# Used for compatibility/migration to other backends
-fields:
-  vm_name: vm_name
-  vmid: vmid
-  ip_address: ip_address
-  expires_at: expires_at
-  owner: owner
-  status: status
-  created_at: created_at
-
 # IPv4 allocation pool for provisioned VMs
 # start/end can be integers (last octet only) or full IP strings:
 #   start: 200                    # Integer format (recommended)

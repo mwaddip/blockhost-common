@@ -40,17 +40,6 @@ from typing import Callable, Optional
 from .config import load_db_config, load_broker_allocation
 
 
-# Default field mappings
-DEFAULT_FIELDS = {
-    "vm_name": "vm_name",
-    "vmid": "vmid",
-    "ip_address": "ip_address",
-    "expires_at": "expires_at",
-    "owner": "owner",
-    "status": "status",
-    "created_at": "created_at",
-}
-
 # Default database file path
 DEFAULT_DB_FILE = "/var/lib/blockhost/vms.json"
 
@@ -91,7 +80,6 @@ def _normalize_config(config: dict) -> dict:
     Handles:
     - vmid_range vs vmid_pool key names
     - IP pool start/end as integers or full IP strings
-    - Optional fields dict with defaults
     - Optional db_file with default path
     """
     normalized = config.copy()
@@ -112,10 +100,6 @@ def _normalize_config(config: dict) -> dict:
             "end": 250,
             "gateway": "192.168.122.1",
         }
-
-    # Default fields
-    if "fields" not in normalized:
-        normalized["fields"] = DEFAULT_FIELDS.copy()
 
     # Default db_file
     if "db_file" not in normalized:
@@ -205,14 +189,14 @@ class VMDatabaseBase(ABC):
             expires_at = now + timedelta(days=expiry_days)
 
             vm = {
-                self.fields["vm_name"]: name,
-                self.fields["vmid"]: vmid,
-                self.fields["ip_address"]: ip,
+                "vm_name": name,
+                "vmid": vmid,
+                "ip_address": ip,
                 "ipv6_address": ipv6,
-                self.fields["expires_at"]: expires_at.isoformat(),
-                self.fields["owner"]: owner,
-                self.fields["status"]: "active",
-                self.fields["created_at"]: now.isoformat(),
+                "expires_at": expires_at.isoformat(),
+                "owner": owner,
+                "status": "active",
+                "created_at": now.isoformat(),
                 "purpose": purpose,
                 "wallet_address": wallet_address,
             }
@@ -476,7 +460,6 @@ class VMDatabase(VMDatabaseBase):
 
         self.db_file = Path(self.config["db_file"])
         self.lock_file = Path(str(self.db_file) + ".lock")
-        self.fields = self.config["fields"]
         self.ip_pool = self.config["ip_pool"]
         self.vmid_range = self.config["vmid_range"]
         self.ipv6_pool = self.config.get("ipv6_pool", {"start": 2, "end": 254})
@@ -583,7 +566,6 @@ class MockVMDatabase(VMDatabaseBase):
         # Load and normalize config for IP pool settings
         raw_config = load_db_config(fallback_dir)
         self.config = _normalize_config(raw_config)
-        self.fields = self.config["fields"]
         self.ip_pool = self.config["ip_pool"]
         self.vmid_range = self.config["vmid_range"]
         self.ipv6_pool = self.config.get("ipv6_pool", {"start": 2, "end": 254})

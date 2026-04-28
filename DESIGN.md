@@ -102,7 +102,6 @@ blockhost-engine-evm (populates configs via init-server.sh)
 
 Contains VM provisioning settings:
 - `db_file` - Path to vms.json
-- `fields` - Field name mappings (optional, for backend migration)
 - `ip_pool` - IPv4 allocation range (network, start, end, gateway)
 - `ipv6_pool` - IPv6 allocation range (start, end offsets within prefix)
 - `default_expiry_days` - Default VM lifetime
