@@ -281,6 +281,34 @@ class VMDatabaseBase(ABC):
 
         self._atomic_update(mutator)
 
+    def delete_vm(self, name: str) -> None:
+        """Permanently remove a VM record from the database.
+
+        Releases any IPv4/IPv6 allocations still attached to the record,
+        so calling delete_vm without a prior mark_destroyed cleans up too.
+
+        Raises:
+            ValueError: If no record with that name exists.
+        """
+
+        def mutator(db):
+            if name not in db["vms"]:
+                raise ValueError(f"VM '{name}' not found")
+
+            vm = db["vms"][name]
+
+            ip = vm.get("ip_address")
+            if ip and ip in db["allocated_ips"]:
+                db["allocated_ips"].remove(ip)
+
+            ipv6 = vm.get("ipv6_address")
+            if ipv6 and ipv6 in db.get("allocated_ipv6", []):
+                db["allocated_ipv6"].remove(ipv6)
+
+            del db["vms"][name]
+
+        self._atomic_update(mutator)
+
     def get_vms_to_suspend(self) -> list[dict]:
         """Get active VMs that have expired and are ready for suspension."""
         db = self._read_db()
