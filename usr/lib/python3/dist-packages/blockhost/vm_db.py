@@ -166,18 +166,20 @@ class VMDatabaseBase(ABC):
         expiry_days: int = 30,
         purpose: str = "",
         wallet_address: Optional[str] = None,
+        username: Optional[str] = None,
     ) -> dict:
         """Register a new VM in the database.
 
         Args:
             name: VM name (unique identifier)
-            vmid: Proxmox VMID
+            vmid: numeric VM identifier (provisioner-defined; 0 for libvirt)
             ip: IPv4 address
             ipv6: IPv6 address (optional)
             owner: Owner identifier
             expiry_days: Days until expiry
             purpose: Purpose description
             wallet_address: Owner's wallet address
+            username: Linux username provisioned on the VM
         """
         result = [None]
 
@@ -199,6 +201,7 @@ class VMDatabaseBase(ABC):
                 "created_at": now.isoformat(),
                 "purpose": purpose,
                 "wallet_address": wallet_address,
+                "username": username,
             }
 
             db["vms"][name] = vm
