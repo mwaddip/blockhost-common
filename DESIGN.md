@@ -312,9 +312,12 @@ from blockhost.network_hook import (
     cleanup,                  # Release per-VM network resources on destroy
 )
 
-# Modes: "broker" / "manual" pass the bridge_ip through. "onion" creates a Tor
-# hidden service via the root agent, pushes the .onion into the VM via the
-# provisioner's guest-exec command, and returns the .onion address.
+# Modes: "broker" looks up the VM's IPv6 address from vm-db (the broker-allocated
+# address, routable from outside the host) and falls back to bridge_ip if the
+# record lacks one. "manual" passes the bridge_ip through (operator-configured
+# static IP). "onion" creates a Tor hidden service via the root agent, pushes
+# the .onion into the VM via the provisioner's guest-exec command, and returns
+# the .onion address.
 host = get_connection_endpoint('web-001', '192.168.122.50', mode='onion')
 cleanup('web-001', mode='onion')
 ```

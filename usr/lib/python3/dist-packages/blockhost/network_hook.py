@@ -2,20 +2,27 @@
 
 Maps a VM's (name, bridge_ip) + network mode to the subscriber-facing host.
 
-- broker / manual: pass-through (IPv6 or static IP)
-- onion: create Tor hidden service, push .onion into VM, return .onion
+- broker: look up VM's IPv6 from vm-db (the broker-allocated address,
+  routable from outside the host); fall back to bridge_ip if missing.
+- manual: pass-through (operator-configured static IP).
+- onion: create Tor hidden service, push .onion into VM, return .onion.
 """
 
 import subprocess
 
 from . import root_agent
 from .provisioner import get_provisioner
+from .vm_db import get_database
 
 
 def get_connection_endpoint(vm_name: str, bridge_ip: str, mode: str) -> str:
     """Return the subscriber-facing host for a VM."""
     if mode == "onion":
         return _setup_onion(vm_name, bridge_ip)
+    if mode == "broker":
+        vm = get_database().get_vm(vm_name)
+        if vm and vm.get("ipv6_address"):
+            return vm["ipv6_address"]
     return bridge_ip
 
 
