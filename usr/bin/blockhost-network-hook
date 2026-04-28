@@ -1,0 +1,49 @@
+#!/usr/bin/python3
+"""blockhost-network-hook — CLI wrapper around blockhost.network_hook.
+
+Engines call this binary instead of spawning python3 -c "<inline-script>",
+which avoids per-call interpreter startup + import cost (~50-150 ms each).
+"""
+
+import argparse
+import sys
+
+from blockhost.network_hook import cleanup, get_connection_endpoint
+
+
+def cmd_resolve(args):
+    host = get_connection_endpoint(args.vm_name, args.bridge_ip, args.mode)
+    sys.stdout.write(host + "\n")
+    return 0
+
+
+def cmd_cleanup(args):
+    cleanup(args.vm_name, args.mode)
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="blockhost-network-hook")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("resolve", help="Resolve subscriber-facing host for a VM")
+    p.add_argument("vm_name")
+    p.add_argument("bridge_ip")
+    p.add_argument("mode", help="broker | manual | onion")
+    p.set_defaults(func=cmd_resolve)
+
+    p = sub.add_parser("cleanup", help="Release network resources on VM destroy")
+    p.add_argument("vm_name")
+    p.add_argument("mode", help="broker | manual | onion")
+    p.set_defaults(func=cmd_cleanup)
+
+    args = parser.parse_args()
+    try:
+        sys.exit(args.func(args))
+    except Exception as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

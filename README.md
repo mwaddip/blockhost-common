@@ -40,6 +40,21 @@ journalctl -u blockhost-root-agent
 - `db.yaml` - VM database and IP pool settings
 - `web3-defaults.yaml` - Blockchain and NFT settings
 
+### CLIs
+
+Engine helpers installed under `/usr/bin/`. Engines call these binaries
+instead of spawning `python3 -c "<inline>"`, which avoids per-call
+interpreter startup + import cost (~50–150 ms each).
+
+```bash
+blockhost-vmdb get-vm <vm_name>                       # JSON on stdout, exit 1 if not found
+blockhost-vmdb mark-nft-minted <vm_name> <token_id>   # exit 1 if not found
+blockhost-vmdb extend-expiry <vm_name> <days>         # prints NEEDS_RESUME if previously suspended
+
+blockhost-network-hook resolve <vm_name> <bridge_ip> <mode>   # subscriber-facing host
+blockhost-network-hook cleanup <vm_name> <mode>               # release per-mode resources
+```
+
 ### Python Module
 
 ```python

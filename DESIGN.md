@@ -321,6 +321,16 @@ cleanup('web-001', mode='onion')
 
 The onion path uses two root agent actions (`tor-hidden-service-add`, `tor-hidden-service-remove`) shipped in `system.py`, and the provisioner-supplied `guest-exec` command resolved via `ProvisionerDispatcher.get_command("guest-exec")`.
 
+### CLIs
+
+Two engine helpers in `/usr/bin/`. They are thin wrappers around `blockhost.vm_db` and `blockhost.network_hook`. The point is to let TypeScript / Go / Bash callers spawn a binary instead of `python3 -c "<inline-script>"` — one Python startup per call instead of one per inline import + dispatch.
+
+`blockhost-vmdb` exposes record-level operations callers actually need at runtime: `get-vm` (JSON on stdout), `mark-nft-minted`, and `extend-expiry` (the suspend-aware variant: prints `NEEDS_RESUME` on a second line when the VM was suspended at the moment of extend, so the caller knows to invoke the provisioner's `resume` command).
+
+`blockhost-network-hook` exposes `resolve` (computes the subscriber-facing host for a given mode) and `cleanup` (releases per-mode resources on VM destroy). Behavior mirrors the Python API exactly — same modes, same return semantics.
+
+Exit codes follow Unix conventions: 0 = ok, 1 = expected failure (not found, validation error), 2 = unexpected exception. Stderr carries human-readable error messages.
+
 ## Migration Guide
 
 ### For proxmox-terraform (becomes blockhost-provisioner-proxmox)
