@@ -39,6 +39,7 @@ from .root_agent import (
 from .provisioner import get_provisioner, ProvisionerDispatcher
 from .cloud_init import render_cloud_init, find_template, list_templates
 from .network_hook import get_connection_endpoint, cleanup as network_cleanup
+from .naming import DOMAIN_NAME_RE, is_valid_domain_name, validate_domain_name
 
 __all__ = [
     # Version
@@ -75,4 +76,8 @@ __all__ = [
     # Network hook
     "get_connection_endpoint",
     "network_cleanup",
+    # Naming validators
+    "DOMAIN_NAME_RE",
+    "is_valid_domain_name",
+    "validate_domain_name",
 ]
