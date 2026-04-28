@@ -43,6 +43,15 @@ from .config import load_db_config, load_broker_allocation
 # Default database file path
 DEFAULT_DB_FILE = "/var/lib/blockhost/vms.json"
 
+# Keys managed by other mutators — engines must not overwrite these
+# via update_fields. Listed in the order they appear in the VM record
+# schema (§2 in COMMON_INTERFACE.md).
+RESERVED_FIELDS = frozenset({
+    "vm_name", "vmid", "status", "created_at", "expires_at",
+    "suspended_at", "destroyed_at", "ip_address", "ipv6_address",
+    "nft_token_id", "nft_minted", "nft_minted_at",
+})
+
 
 def _normalize_ip_pool(ip_pool: dict) -> dict:
     """
@@ -463,20 +472,31 @@ class VMDatabaseBase(ABC):
 
         self._atomic_update(mutator)
 
-    def update_beacon_info(self, vm_name: str, beacon_name: str, utxo_ref: str) -> bool:
-        """Set beacon_name and utxo_ref on an existing VM entry.
+    def update_fields(self, vm_name: str, fields: dict) -> bool:
+        """Merge an arbitrary field dict into a VM record under the lockfile.
 
-        No-op (returns False) when the VM does not exist — chosen so the
-        caller can race a deletion without needing exception handling.
-        Returns True on success.
+        Common does not know or validate what keys an engine writes — it
+        just merges and persists. Engines pick names that fit their chain
+        (e.g. cardano writes ``beacon_name``/``utxo_ref``).
+
+        Returns ``False`` if ``vm_name`` is not in the DB (no exception);
+        ``True`` on successful merge. The bool return — different from
+        every other mutator's raise convention — lets engines call this
+        after a chain commit without crashing on a concurrent deletion.
+
+        Raises ``ValueError`` (before the lockfile is acquired) if
+        ``fields`` contains any key that another mutator manages.
         """
+        for key in fields:
+            if key in RESERVED_FIELDS:
+                raise ValueError(f"Cannot overwrite reserved key: {key!r}")
+
         result = [False]
 
         def mutator(db):
             if vm_name not in db["vms"]:
                 return
-            db["vms"][vm_name]["beacon_name"] = beacon_name
-            db["vms"][vm_name]["utxo_ref"] = utxo_ref
+            db["vms"][vm_name].update(fields)
             result[0] = True
 
         self._atomic_update(mutator)
