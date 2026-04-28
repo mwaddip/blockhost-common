@@ -463,6 +463,25 @@ class VMDatabaseBase(ABC):
 
         self._atomic_update(mutator)
 
+    def update_beacon_info(self, vm_name: str, beacon_name: str, utxo_ref: str) -> bool:
+        """Set beacon_name and utxo_ref on an existing VM entry.
+
+        No-op (returns False) when the VM does not exist — chosen so the
+        caller can race a deletion without needing exception handling.
+        Returns True on success.
+        """
+        result = [False]
+
+        def mutator(db):
+            if vm_name not in db["vms"]:
+                return
+            db["vms"][vm_name]["beacon_name"] = beacon_name
+            db["vms"][vm_name]["utxo_ref"] = utxo_ref
+            result[0] = True
+
+        self._atomic_update(mutator)
+        return result[0]
+
 
 class VMDatabase(VMDatabaseBase):
     """JSON file-based VM database with fcntl file locking."""
