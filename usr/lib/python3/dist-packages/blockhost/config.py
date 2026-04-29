@@ -52,6 +52,21 @@ BROKER_ALLOCATION_FILE = "broker-allocation.json"
 # Configuration Loading
 # =============================================================================
 
+def _path_exists(path: Path) -> bool:
+    """Path.exists() that treats EACCES (and other OSErrors) as 'no'.
+
+    The cwd-relative dev fallback ``Path("config")/...`` can raise
+    PermissionError when the caller's cwd isn't traversable (e.g.
+    running as a different user from a non-readable directory). For
+    search-path semantics, an unreadable candidate is equivalent to a
+    missing one — keep walking.
+    """
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
 def get_config_path(
     filename: str,
     fallback_dir: Optional[Path] = None,
@@ -85,7 +100,7 @@ def get_config_path(
     search_paths.append(Path("config") / filename)
 
     for path in search_paths:
-        if path.exists():
+        if _path_exists(path):
             return path
 
     raise FileNotFoundError(
@@ -190,7 +205,7 @@ def load_broker_allocation(fallback_dir: Optional[Path] = None) -> Optional[dict
     search_paths.append(Path("config") / BROKER_ALLOCATION_FILE)
 
     for path in search_paths:
-        if path.exists():
+        if _path_exists(path):
             with open(path) as f:
                 return json.load(f)
 
