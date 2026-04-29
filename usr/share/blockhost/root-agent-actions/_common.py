@@ -39,6 +39,14 @@ IPV6_CIDR128_RE = re.compile(r'^([0-9a-fA-F:]+)/128$')
 ALLOWED_ROUTE_DEVS = frozenset({'vmbr0', 'virbr0', 'br0', 'br-ext', 'docker0'})
 TAP_DEV_RE = re.compile(r'^tap\d+i\d+$')
 
+# Wallet roles the generate-wallet action must refuse — bootstrap-owned
+# names the wizard mints before the engine ever calls into the root agent.
+# 'hot' is intentionally absent: the fund manager invokes generate-wallet
+# to mint the hot wallet on its first cycle, so denying 'hot' here would
+# deadlock that path. Engine-side CLIs (e.g. `ab`) may carry a wider deny
+# list; this set is scoped to the root-agent action.
+WALLET_DENY_NAMES = frozenset({'admin', 'server', 'dev', 'broker'})
+
 
 VIRT_CUSTOMIZE_ALLOWED_OPS = frozenset({
     '--install', '--run-command', '--copy-in', '--upload',
