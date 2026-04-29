@@ -1,6 +1,5 @@
 """End-to-end tests for the blockhost-network-hook CLI."""
 
-import json
 import os
 import subprocess
 import sys
@@ -14,45 +13,13 @@ CLI_PATH = REPO_ROOT / "usr" / "bin" / "blockhost-network-hook"
 PKG_PATH = REPO_ROOT / "usr" / "lib" / "python3" / "dist-packages"
 
 
-def _run_cli(*args, fallback_dir=None, plugins_dir=None, env_extra=None):
-    """Run the CLI in a subprocess.
-
-    Sets PYTHONPATH so the in-tree blockhost package is importable, plus
-    BLOCKHOST_FALLBACK_DIR / BLOCKHOST_NETWORK_PLUGINS_DIR which the test
-    overrides below honor (we monkeypatch via env-driven imports).
-    """
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(PKG_PATH) + os.pathsep + env.get("PYTHONPATH", "")
-    if fallback_dir is not None:
-        env["BLOCKHOST_TEST_FALLBACK_DIR"] = str(fallback_dir)
-    if plugins_dir is not None:
-        env["BLOCKHOST_TEST_PLUGINS_DIR"] = str(plugins_dir)
-    if env_extra:
-        env.update(env_extra)
-
-    return subprocess.run(
-        [sys.executable, str(CLI_PATH), *args],
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-
-
-# The CLI imports blockhost.network with the production /usr/share path.
-# To run end-to-end without root, we exec the same logic via python -c
-# below. The dispatcher Python tests already exercise the in-process
-# resolver — these tests just confirm argparse wiring and exit-code
-# propagation through the CLI's exception handling.
-
-
-def _exec_cli(args, fallback_dir, plugins_dir, vm_register=None):
+def _exec_cli(args, fallback_dir, net_dirs, vm_register=None):
     """Invoke the CLI's main() in a subprocess.
 
-    Patches:
-      - blockhost.network.NETWORK_PLUGINS_DIR → tmp dir
-      - blockhost.network.get_database → returns a tmp-backed instance
-        (patching the reference *as imported by network.py* — patching
-        blockhost.vm_db.get_database doesn't reach the bound name)
+    Patches the in-process module-level constants so the CLI hits the
+    test directories instead of /etc/blockhost. Also rebinds
+    blockhost.network.get_database to a tmp-backed VMDatabase so the
+    dispatcher's resolve_mode reads from the test instance.
     """
     register_block = ""
     if vm_register:
@@ -69,7 +36,8 @@ def _exec_cli(args, fallback_dir, plugins_dir, vm_register=None):
         f"sys.path.insert(0, {str(PKG_PATH)!r})\n"
         "import blockhost.network as N\n"
         "import blockhost.vm_db as VDB\n"
-        f"N.NETWORK_PLUGINS_DIR = Path({str(plugins_dir)!r})\n"
+        f"N.NETWORK_MODES_AVAILABLE_DIR = Path({str(net_dirs.available)!r})\n"
+        f"N.NETWORK_MODES_ENABLED_DIR = Path({str(net_dirs.enabled)!r})\n"
         f"_db = VDB.VMDatabase(fallback_dir=Path({str(fallback_dir)!r}))\n"
         "N.get_database = lambda: _db\n"
         f"{register_block}"
@@ -83,46 +51,115 @@ def _exec_cli(args, fallback_dir, plugins_dir, vm_register=None):
     )
 
 
-def test_cli_help_lists_all_subcommands(fallback_dir, plugins_dir):
-    result = _exec_cli(["--help"], fallback_dir, plugins_dir)
+def test_cli_help_lists_all_subcommands(fallback_dir, net_dirs):
+    result = _exec_cli(["--help"], fallback_dir, net_dirs)
     assert result.returncode == 0
     out = result.stdout
     for sub in (
         "public-address", "push-vm-config", "cleanup",
-        "host-setup", "host-teardown", "pre-provision",
-        "mode", "list-modes",
+        "pre-provision", "mode",
+        "list-available", "list-enabled", "enable", "disable",
     ):
         assert sub in out, f"missing subcommand in help: {sub}"
 
 
-def test_cli_list_modes_empty(fallback_dir, plugins_dir):
-    result = _exec_cli(["list-modes"], fallback_dir, plugins_dir)
+def test_cli_help_no_removed_subcommands(fallback_dir, net_dirs):
+    result = _exec_cli(["--help"], fallback_dir, net_dirs)
+    assert result.returncode == 0
+    for removed in ("host-setup", "host-teardown", "list-modes"):
+        assert removed not in result.stdout, (
+            f"removed subcommand still in CLI help: {removed}"
+        )
+
+
+def test_cli_list_available_empty(fallback_dir, net_dirs):
+    result = _exec_cli(["list-available"], fallback_dir, net_dirs)
     assert result.returncode == 0
     assert result.stdout.strip() == ""
 
 
-def test_cli_list_modes_emits_one_json_per_line(
-    fallback_dir, plugins_dir, make_plugin
+def test_cli_list_available_emits_one_per_line(
+    fallback_dir, net_dirs, make_plugin
 ):
-    make_plugin("test", commands={"public-address": "echo a"})
-    make_plugin("other", commands={})
-    result = _exec_cli(["list-modes"], fallback_dir, plugins_dir)
+    make_plugin("a", commands={}, enabled=False)
+    make_plugin("b", commands={}, enabled=False)
+    result = _exec_cli(["list-available"], fallback_dir, net_dirs)
     assert result.returncode == 0
-    lines = [line for line in result.stdout.strip().split("\n") if line]
-    assert len(lines) == 2
-    parsed = [json.loads(line) for line in lines]
-    names = sorted(p["name"] for p in parsed)
-    assert names == ["other", "test"]
+    lines = [ln for ln in result.stdout.splitlines() if ln]
+    assert lines == ["a", "b"]
+
+
+def test_cli_list_enabled_empty(fallback_dir, net_dirs):
+    result = _exec_cli(["list-enabled"], fallback_dir, net_dirs)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
+def test_cli_list_enabled_after_enable(
+    fallback_dir, net_dirs, make_plugin
+):
+    make_plugin("a", commands={}, enabled=True)
+    make_plugin("b", commands={}, enabled=False)
+    result = _exec_cli(["list-enabled"], fallback_dir, net_dirs)
+    assert result.returncode == 0
+    lines = [ln for ln in result.stdout.splitlines() if ln]
+    assert lines == ["a"]
+
+
+def test_cli_enable_creates_symlink(
+    fallback_dir, net_dirs, make_plugin
+):
+    make_plugin("test", commands={}, enabled=False)
+    result = _exec_cli(["enable", "test"], fallback_dir, net_dirs)
+    assert result.returncode == 0, result.stderr
+    assert (net_dirs.enabled / "test.json").is_symlink()
+
+
+def test_cli_enable_idempotent(
+    fallback_dir, net_dirs, make_plugin
+):
+    make_plugin("test", commands={}, enabled=True)
+    result = _exec_cli(["enable", "test"], fallback_dir, net_dirs)
+    assert result.returncode == 0, result.stderr
+
+
+def test_cli_enable_conflict_preserves_existing(
+    fallback_dir, net_dirs, make_plugin
+):
+    make_plugin("a", commands={}, exclusive_with=["*"], enabled=True)
+    make_plugin("b", commands={}, exclusive_with=["*"], enabled=False)
+    result = _exec_cli(["enable", "b"], fallback_dir, net_dirs)
+    assert result.returncode == 1
+    assert "exclusive" in result.stderr.lower()
+    # 'a' is still enabled, 'b' did NOT get enabled
+    assert (net_dirs.enabled / "a.json").is_symlink()
+    assert not (net_dirs.enabled / "b.json").exists()
+
+
+def test_cli_disable_removes_symlink(
+    fallback_dir, net_dirs, make_plugin
+):
+    make_plugin("test", commands={}, enabled=True)
+    result = _exec_cli(["disable", "test"], fallback_dir, net_dirs)
+    assert result.returncode == 0, result.stderr
+    assert not (net_dirs.enabled / "test.json").exists()
+
+
+def test_cli_disable_idempotent(
+    fallback_dir, net_dirs
+):
+    result = _exec_cli(["disable", "ghost"], fallback_dir, net_dirs)
+    assert result.returncode == 0, result.stderr
 
 
 def test_cli_public_address_dispatches(
-    fallback_dir, plugins_dir, make_plugin
+    fallback_dir, net_dirs, make_plugin
 ):
     make_plugin("test", commands={"public-address": 'echo "test-addr"'})
     result = _exec_cli(
         ["public-address", "vm1"],
         fallback_dir,
-        plugins_dir,
+        net_dirs,
         vm_register={
             "name": "vm1",
             "vmid": 100,
@@ -134,23 +171,22 @@ def test_cli_public_address_dispatches(
     assert result.stdout.strip() == "test-addr"
 
 
-def test_cli_missing_network_mode_exits_nonzero(
-    fallback_dir, plugins_dir, make_plugin
+def test_cli_missing_vm_record_exits_one(
+    fallback_dir, net_dirs, make_plugin
 ):
     make_plugin("test", commands={"public-address": "echo foo"})
-    # Don't register the VM at all → resolve_mode raises VM-not-found
     result = _exec_cli(
-        ["public-address", "ghost-vm"], fallback_dir, plugins_dir
+        ["public-address", "ghost-vm"], fallback_dir, net_dirs
     )
     assert result.returncode == 1
     assert "VM not found" in result.stderr or "ghost-vm" in result.stderr
 
 
-def test_cli_mode_subcommand(fallback_dir, plugins_dir):
+def test_cli_mode_subcommand(fallback_dir, net_dirs):
     result = _exec_cli(
         ["mode", "vm1"],
         fallback_dir,
-        plugins_dir,
+        net_dirs,
         vm_register={
             "name": "vm1",
             "vmid": 100,
@@ -162,39 +198,28 @@ def test_cli_mode_subcommand(fallback_dir, plugins_dir):
     assert result.stdout.strip() == "broker"
 
 
-def test_cli_host_setup_dispatches_without_vm_lookup(
-    fallback_dir, plugins_dir, make_plugin
-):
-    make_plugin("test", commands={"host-setup": "echo HOST_SETUP_OK"})
-    result = _exec_cli(
-        ["host-setup", "test"], fallback_dir, plugins_dir
-    )
-    assert result.returncode == 0, result.stderr
-    assert "HOST_SETUP_OK" in result.stdout
-
-
 def test_cli_pre_provision_passes_plan_id(
-    fallback_dir, plugins_dir, make_plugin
+    fallback_dir, net_dirs, make_plugin
 ):
     make_plugin(
         "test",
         commands={"pre-provision": 'echo "{\\"prefix\\":\\"plan=$BH_PLAN_ID\\"}"'},
     )
     result = _exec_cli(
-        ["pre-provision", "test", "plan-99"], fallback_dir, plugins_dir
+        ["pre-provision", "test", "plan-99"], fallback_dir, net_dirs
     )
     assert result.returncode == 0, result.stderr
     assert "plan=plan-99" in result.stdout
 
 
 def test_cli_forwards_plugin_exit_code(
-    fallback_dir, plugins_dir, make_plugin
+    fallback_dir, net_dirs, make_plugin
 ):
     make_plugin("test", commands={"public-address": "exit 7"})
     result = _exec_cli(
         ["public-address", "vm1"],
         fallback_dir,
-        plugins_dir,
+        net_dirs,
         vm_register={
             "name": "vm1",
             "vmid": 100,
@@ -205,14 +230,14 @@ def test_cli_forwards_plugin_exit_code(
     assert result.returncode == 7
 
 
-def test_cli_missing_manifest_exits_one(
-    fallback_dir, plugins_dir
+def test_cli_mode_not_enabled_exits_one(
+    fallback_dir, net_dirs
 ):
-    """VM has network_mode=ghost but no plugin file installed."""
+    """VM has network_mode=ghost but no symlink in enabled/."""
     result = _exec_cli(
         ["public-address", "vm1"],
         fallback_dir,
-        plugins_dir,
+        net_dirs,
         vm_register={
             "name": "vm1",
             "vmid": 100,
@@ -221,4 +246,4 @@ def test_cli_missing_manifest_exits_one(
         },
     )
     assert result.returncode == 1
-    assert "manifest not found" in result.stderr
+    assert "not enabled" in result.stderr

@@ -1,7 +1,9 @@
 """Shared pytest fixtures for blockhost-common tests."""
 
+import json
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 # Make the in-tree blockhost package importable without installing the .deb.
@@ -50,45 +52,70 @@ def db(fallback_dir, monkeypatch):
     return instance
 
 
-@pytest.fixture
-def plugins_dir(tmp_path, monkeypatch):
-    """An empty plugins manifest dir; tests add plugins as needed.
+@dataclass
+class NetDirs:
+    available: Path
+    enabled: Path
 
-    Patched into ``blockhost.network.NETWORK_PLUGINS_DIR`` so the shim
-    (which doesn't accept an explicit plugins_dir) hits this dir too.
+
+@pytest.fixture
+def net_dirs(tmp_path, monkeypatch):
+    """Empty network-modes.available/ and network-modes.enabled/ dirs.
+
+    Patched into ``blockhost.network`` module-level constants so both
+    in-process calls and tests that don't pass dirs explicitly hit
+    these paths.
     """
-    d = tmp_path / "network-plugins"
-    d.mkdir()
+    avail = tmp_path / "network-modes.available"
+    enabled = tmp_path / "network-modes.enabled"
+    avail.mkdir()
+    enabled.mkdir()
     import blockhost.network as N
-    monkeypatch.setattr(N, "NETWORK_PLUGINS_DIR", d)
-    return d
+    monkeypatch.setattr(N, "NETWORK_MODES_AVAILABLE_DIR", avail)
+    monkeypatch.setattr(N, "NETWORK_MODES_ENABLED_DIR", enabled)
+    return NetDirs(available=avail, enabled=enabled)
 
 
 @pytest.fixture
-def make_plugin(plugins_dir):
+def make_plugin(net_dirs):
     """Factory for installing a fake plugin manifest + script.
+
+    Writes the manifest to ``available/<name>.json``. By default also
+    creates a symlink in ``enabled/`` so the plugin is dispatchable.
+    Pass ``enabled=False`` for tests that exercise the enable/disable
+    flow itself.
 
     Usage:
         path = make_plugin("test", commands={"public-address": "echo abc"})
+        path = make_plugin("a", commands={}, exclusive_with=["*"], enabled=False)
     """
-    def _make(name: str, commands: dict, **manifest_extras) -> Path:
+    def _make(
+        name: str,
+        commands: dict,
+        enabled: bool = True,
+        **manifest_extras,
+    ) -> Path:
         cmds = {}
         for cmd_name, body in commands.items():
-            script = plugins_dir / f"{name}-{cmd_name}.sh"
+            script = net_dirs.available / f"{name}-{cmd_name}.sh"
             script.write_text(f"#!/bin/sh\n{body}\n")
             os.chmod(script, 0o755)
             cmds[cmd_name] = str(script)
         manifest = {
             "name": name,
-            "display_name": manifest_extras.get("display_name", name),
-            "description": manifest_extras.get("description", ""),
+            "display_name": manifest_extras.pop("display_name", name),
+            "description": manifest_extras.pop("description", ""),
+            "exclusive_with": manifest_extras.pop("exclusive_with", []),
             "commands": cmds,
         }
         for k, v in manifest_extras.items():
-            manifest.setdefault(k, v)
-        manifest_path = plugins_dir / f"{name}.json"
-        import json
+            manifest[k] = v
+        manifest_path = net_dirs.available / f"{name}.json"
         manifest_path.write_text(json.dumps(manifest))
+        if enabled:
+            link_path = net_dirs.enabled / f"{name}.json"
+            target = Path("..") / net_dirs.available.name / f"{name}.json"
+            os.symlink(target, link_path)
         return manifest_path
 
     return _make

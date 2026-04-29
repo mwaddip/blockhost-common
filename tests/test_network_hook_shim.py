@@ -2,11 +2,9 @@
 
 import warnings
 
-import pytest
-
 
 def test_shim_get_connection_endpoint_emits_deprecation(
-    db, plugins_dir, make_plugin, monkeypatch
+    db, make_plugin
 ):
     db.register_vm(
         name="vm1",
@@ -15,9 +13,6 @@ def test_shim_get_connection_endpoint_emits_deprecation(
         network_mode="test",
     )
     make_plugin("test", commands={"public-address": 'echo "addr.onion"'})
-
-    import blockhost.network as N
-    monkeypatch.setattr(N, "NETWORK_PLUGINS_DIR", plugins_dir)
 
     from blockhost.network_hook import get_connection_endpoint
     with warnings.catch_warnings(record=True) as captured:
@@ -31,7 +26,7 @@ def test_shim_get_connection_endpoint_emits_deprecation(
 
 
 def test_shim_cleanup_silent_when_plugin_lacks_command(
-    db, plugins_dir, make_plugin, monkeypatch
+    db, make_plugin
 ):
     """Old shim was a no-op for modes without per-VM teardown (manual);
     preserve that so engines that haven't migrated don't crash."""
@@ -43,9 +38,6 @@ def test_shim_cleanup_silent_when_plugin_lacks_command(
     )
     make_plugin("manual", commands={"public-address": "echo a"})
 
-    import blockhost.network as N
-    monkeypatch.setattr(N, "NETWORK_PLUGINS_DIR", plugins_dir)
-
     from blockhost.network_hook import cleanup
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
@@ -53,7 +45,7 @@ def test_shim_cleanup_silent_when_plugin_lacks_command(
 
 
 def test_shim_cleanup_invokes_plugin_command(
-    db, plugins_dir, make_plugin, monkeypatch, capfd
+    db, make_plugin, capfd
 ):
     db.register_vm(
         name="vm1",
@@ -62,9 +54,6 @@ def test_shim_cleanup_invokes_plugin_command(
         network_mode="onion",
     )
     make_plugin("onion", commands={"cleanup": "echo CLEAN_RAN"})
-
-    import blockhost.network as N
-    monkeypatch.setattr(N, "NETWORK_PLUGINS_DIR", plugins_dir)
 
     from blockhost.network_hook import cleanup
     with warnings.catch_warnings():

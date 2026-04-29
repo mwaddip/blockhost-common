@@ -2,7 +2,8 @@
 """blockhost-network-hook — network-plugin dispatcher CLI.
 
 Resolves a VM's ``network_mode`` from vm-db and forwards to the plugin
-manifested at ``/usr/share/blockhost/network/<mode>.json``. Common ships
+manifested at ``/etc/blockhost/network-modes.available/<mode>.json`` and
+symlinked into ``/etc/blockhost/network-modes.enabled/``. Common ships
 this dispatcher; mode-specific code (onion, broker, manual, none) lives
 in plugins from the main repo / installer.
 
@@ -10,21 +11,22 @@ See ``facts/NETWORK_INTERFACE.md`` for the full contract.
 
 Exit codes follow the convention in ``COMMON_INTERFACE.md §6a``:
   0 = success
-  1 = expected failure (missing record, missing manifest, plugin's own exit 1)
+  1 = expected failure (missing record, mode not enabled, plugin's own exit 1)
   2 = unexpected exception
 Plugin commands' own exit codes are forwarded as-is.
 """
 
 import argparse
-import json
-import os
 import sys
 
 from blockhost.network import (
     DispatchError,
+    disable,
     dispatch_mode,
     dispatch_vm,
-    list_modes,
+    enable,
+    list_available,
+    list_enabled,
     resolve_mode,
 )
 
@@ -41,14 +43,6 @@ def cmd_cleanup(args):
     return dispatch_vm("cleanup", args.vm_name)
 
 
-def cmd_host_setup(args):
-    return dispatch_mode("host-setup", args.mode)
-
-
-def cmd_host_teardown(args):
-    return dispatch_mode("host-teardown", args.mode)
-
-
 def cmd_pre_provision(args):
     return dispatch_mode(
         "pre-provision",
@@ -63,14 +57,25 @@ def cmd_mode(args):
     return 0
 
 
-def cmd_list_modes(args):
-    for manifest in list_modes():
-        entry = {
-            "name": manifest.get("name"),
-            "display_name": manifest.get("display_name", ""),
-            "description": manifest.get("description", ""),
-        }
-        sys.stdout.write(json.dumps(entry) + "\n")
+def cmd_list_available(args):
+    for name in list_available():
+        sys.stdout.write(name + "\n")
+    return 0
+
+
+def cmd_list_enabled(args):
+    for name in list_enabled():
+        sys.stdout.write(name + "\n")
+    return 0
+
+
+def cmd_enable(args):
+    enable(args.mode)
+    return 0
+
+
+def cmd_disable(args):
+    disable(args.mode)
     return 0
 
 
@@ -78,7 +83,8 @@ def main():
     parser = argparse.ArgumentParser(
         prog="blockhost-network-hook",
         description="Dispatch network-layer operations to the plugin "
-                    "registered for a VM's network_mode.",
+                    "registered for a VM's network_mode, and manage the "
+                    "available/enabled set of network plugins.",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -104,20 +110,6 @@ def main():
     p.set_defaults(func=cmd_cleanup)
 
     p = sub.add_parser(
-        "host-setup",
-        help="One-time host setup at finalization for a network mode.",
-    )
-    p.add_argument("mode")
-    p.set_defaults(func=cmd_host_setup)
-
-    p = sub.add_parser(
-        "host-teardown",
-        help="Reverse host-setup for a network mode.",
-    )
-    p.add_argument("mode")
-    p.set_defaults(func=cmd_host_teardown)
-
-    p = sub.add_parser(
         "pre-provision",
         help="Pre-allocate values for a plan (future; mode + plan id).",
     )
@@ -133,10 +125,31 @@ def main():
     p.set_defaults(func=cmd_mode)
 
     p = sub.add_parser(
-        "list-modes",
-        help="List installed network plugin manifests (one JSON object per line).",
+        "list-available",
+        help="List installed network mode names (one per line).",
     )
-    p.set_defaults(func=cmd_list_modes)
+    p.set_defaults(func=cmd_list_available)
+
+    p = sub.add_parser(
+        "list-enabled",
+        help="List currently-enabled network mode names (one per line).",
+    )
+    p.set_defaults(func=cmd_list_enabled)
+
+    p = sub.add_parser(
+        "enable",
+        help="Enable a network mode (creates a symlink in enabled/). "
+             "Validates exclusive_with against currently-enabled modes.",
+    )
+    p.add_argument("mode")
+    p.set_defaults(func=cmd_enable)
+
+    p = sub.add_parser(
+        "disable",
+        help="Disable a network mode (removes the symlink in enabled/).",
+    )
+    p.add_argument("mode")
+    p.set_defaults(func=cmd_disable)
 
     args = parser.parse_args()
     try:

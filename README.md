@@ -52,16 +52,18 @@ blockhost-vmdb mark-nft-minted <vm_name> <token_id>   # exit 1 if not found
 blockhost-vmdb extend-expiry <vm_name> <days>         # prints NEEDS_RESUME if previously suspended
 blockhost-vmdb update-fields <vm_name> --fields '{...}'  # engine-defined merge
 
-# blockhost-network-hook dispatches to the plugin manifested at
-# /usr/share/blockhost/network/<mode>.json — see facts/NETWORK_INTERFACE.md.
+# blockhost-network-hook dispatches to the network-mode plugin enabled
+# via /etc/blockhost/network-modes.enabled/<mode>.json (apache-style
+# available/enabled symlink pattern). See facts/NETWORK_INTERFACE.md.
 blockhost-network-hook public-address <vm_name>       # publicly-routable address
 blockhost-network-hook push-vm-config <vm_name>       # idempotent VM-side config push
 blockhost-network-hook cleanup <vm_name>              # release per-VM resources
-blockhost-network-hook host-setup <mode>              # one-time host setup at finalization
-blockhost-network-hook host-teardown <mode>           # reverse host-setup
 blockhost-network-hook pre-provision <mode> <plan>    # pre-allocate values for a plan (future)
 blockhost-network-hook mode <vm_name>                 # echo the resolved mode (debugging)
-blockhost-network-hook list-modes                     # JSON-line list of installed plugin manifests
+blockhost-network-hook list-available                 # installed mode names, one per line
+blockhost-network-hook list-enabled                   # currently-enabled mode names, one per line
+blockhost-network-hook enable <mode>                  # symlink available → enabled (validates exclusive_with)
+blockhost-network-hook disable <mode>                 # remove the enabled symlink
 ```
 
 ### Python Module
@@ -72,7 +74,10 @@ from blockhost.vm_db import get_database
 from blockhost.root_agent import call
 from blockhost.provisioner import get_provisioner
 from blockhost.cloud_init import render_cloud_init
-from blockhost.network import dispatch_vm, dispatch_mode, list_modes, resolve_mode
+from blockhost.network import (
+    dispatch_vm, dispatch_mode, resolve_mode,
+    list_available, list_enabled, enable, disable,
+)
 
 # Load configuration
 db_config = load_db_config()
@@ -98,10 +103,14 @@ cmd = p.get_command('create')        # Requires provisioner manifest
 # Cloud-init template rendering
 content = render_cloud_init('nft-auth.yaml', {'VM_NAME': 'web-001'})
 
-# Network plugin dispatch (forwards to /usr/share/blockhost/network/<mode>/...)
+# Network plugin dispatch — resolves via /etc/blockhost/network-modes.enabled/
 exit_code = dispatch_vm('public-address', 'web-001')
-exit_code = dispatch_mode('host-setup', 'onion')
 mode = resolve_mode('web-001')                       # 'onion'
+
+# Activation management (apache sites-available/sites-enabled pattern)
+enable('onion')                                       # create symlink, validate exclusive_with
+list_enabled()                                        # ['onion']
+disable('onion')                                      # remove symlink
 
 # Deprecated shim — engines that haven't migrated yet keep working
 # (each call emits a DeprecationWarning)

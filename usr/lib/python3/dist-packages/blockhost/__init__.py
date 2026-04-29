@@ -42,7 +42,10 @@ from .network import (
     DispatchError as NetworkDispatchError,
     dispatch_mode as network_dispatch_mode,
     dispatch_vm as network_dispatch_vm,
-    list_modes as network_list_modes,
+    list_available as network_list_available,
+    list_enabled as network_list_enabled,
+    enable as network_enable,
+    disable as network_disable,
     resolve_mode as network_resolve_mode,
 )
 from .network_hook import get_connection_endpoint, cleanup as network_cleanup
@@ -84,7 +87,10 @@ __all__ = [
     "NetworkDispatchError",
     "network_dispatch_mode",
     "network_dispatch_vm",
-    "network_list_modes",
+    "network_list_available",
+    "network_list_enabled",
+    "network_enable",
+    "network_disable",
     "network_resolve_mode",
     # Deprecated network hook shim (kept until engines migrate)
     "get_connection_endpoint",

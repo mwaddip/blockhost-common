@@ -93,15 +93,22 @@ blockhost-engine-evm (populates configs via init-server.sh)
 
 ### Network plugins (NOT shipped by common)
 
-Common ships only the dispatcher (`blockhost-network-hook` and `blockhost.network`). Mode-specific code lives in plugin packages from the main repo / installer:
+Common ships only the dispatcher (`blockhost-network-hook` and `blockhost.network`). Mode-specific code lives in plugin packages from the main repo / installer, discovered via the apache `sites-available`/`sites-enabled` pattern:
 
 ```
-/usr/share/blockhost/network/
-├── <mode>.json                     # Plugin manifest (commands, validation)
-└── <mode>/                         # Plugin scripts referenced by manifest
+/etc/blockhost/network-modes.available/    # installed plugin manifests
+├── onion.json
+├── broker.json
+├── manual.json
+└── none.json
+
+/etc/blockhost/network-modes.enabled/      # active modes (symlinks → available/)
+└── onion.json -> ../network-modes.available/onion.json
+
+/usr/share/blockhost/network/<mode>/       # plugin scripts referenced by manifest
 ```
 
-Plugins ship from the main repo. See `facts/NETWORK_INTERFACE.md` for the manifest schema and command set.
+Package install drops manifests in `available/`; the wizard manages symlinks in `enabled/` (or operators do, via `blockhost-network-hook enable/disable`). See `facts/NETWORK_INTERFACE.md` for the manifest schema, command set, and `exclusive_with` semantics.
 
 ### Created by blockhost-engine-evm init
 
@@ -329,30 +336,40 @@ Template search order: extra_dirs (if provided) → `/usr/share/blockhost/cloud-
 
 ### blockhost.network
 
-The dispatcher behind `blockhost-network-hook`. Mode-specific logic lives in plugins under `/usr/share/blockhost/network/<mode>/`, manifested at `/usr/share/blockhost/network/<mode>.json`. Common ships only the lookup and exec.
+The dispatcher behind `blockhost-network-hook`. Plugins are discovered via the apache `sites-available`/`sites-enabled` pattern: manifests live in `/etc/blockhost/network-modes.available/<mode>.json`; activation is a symlink under `/etc/blockhost/network-modes.enabled/`. Mode-specific code lives in plugins under `/usr/share/blockhost/network/<mode>/` (referenced from the manifest's `commands`). Common ships only the lookup and exec.
 
 ```python
 from blockhost.network import (
-    DispatchError,        # Raised when manifest/command/VM record is missing
+    DispatchError,        # Raised when symlink/command/VM record is missing
     resolve_mode,         # vm-db.network_mode[<vm>] → str
     dispatch_vm,          # exec plugin command for a VM (resolves mode)
-    dispatch_mode,        # exec plugin command keyed by explicit mode (host-setup etc.)
-    list_modes,           # list installed plugin manifests
+    dispatch_mode,        # exec plugin command keyed by explicit mode (pre-provision)
+    list_available,       # installed mode names (basenames in available/)
+    list_enabled,         # currently-enabled mode names (basenames in enabled/)
+    enable,               # symlink available/<mode>.json → enabled/, validates exclusive_with
+    disable,              # remove the symlink
 )
 
 # Resolve a VM's mode and run its public-address command
 rc = dispatch_vm("public-address", "blockhost-001")
 
-# Mode-keyed (no VM lookup)
-rc = dispatch_mode("host-setup", "onion")
+# Mode-keyed (no VM lookup) — pre-provision is the only mode-keyed command today
+rc = dispatch_mode("pre-provision", "onion", extra_argv=["plan-1"])
+
+# Manage the activation set
+enable("onion")               # create symlink; rejects on exclusive_with conflict
+list_enabled()                # ['onion']
+disable("onion")              # remove symlink
 ```
 
-Resolution rules (per `facts/NETWORK_INTERFACE.md §7`):
+Resolution rules (per `facts/NETWORK_INTERFACE.md §8`):
 
 1. Read `vm-db.network_mode[<vm>]`. Missing → `DispatchError` (no fallback to global mode — the field is required by the schema).
-2. Read manifest at `/usr/share/blockhost/network/<mode>.json`. Missing → `DispatchError`.
+2. Resolve `/etc/blockhost/network-modes.enabled/<mode>.json`. Missing or dangling → `DispatchError` (`mode <mode> not enabled`).
 3. Look up `manifest.commands.<subcommand>`. Missing → `DispatchError` (`plugin does not implement <subcommand>`).
 4. Exec the plugin command with `BH_VM_NAME=<vm>` (or `BH_PLAN_ID=<id>` for `pre-provision`) in the environment plus the same args on argv. Forward stdout/stderr/exit code unchanged.
+
+`enable` validates `exclusive_with` pairwise against the currently-enabled set (rules in `NETWORK_INTERFACE.md §4`): `*` blocks coexistence with anything; named entries block coexistence symmetrically (declaring on either side suffices). On conflict, no symlink is touched.
 
 ### blockhost.network_hook (DEPRECATED)
 
@@ -375,20 +392,23 @@ Two engine helpers in `/usr/bin/`. The point is to let TypeScript / Go / Bash ca
 
 `blockhost-vmdb` exposes record-level operations: `get-vm` (JSON on stdout), `mark-nft-minted`, `extend-expiry` (suspend-aware: prints `NEEDS_RESUME` on a second line when the VM was suspended at extend time), and `update-fields` (engine-defined field merge).
 
-`blockhost-network-hook` is the network-plugin dispatcher (see `facts/COMMON_INTERFACE.md §6a` and `NETWORK_INTERFACE.md §7`):
+`blockhost-network-hook` is the network-plugin dispatcher (see `facts/COMMON_INTERFACE.md §6a` and `NETWORK_INTERFACE.md §8`):
 
 ```bash
 blockhost-network-hook public-address <vm_name>     # publicly-routable address
 blockhost-network-hook push-vm-config <vm_name>     # idempotent VM-side config push
 blockhost-network-hook cleanup <vm_name>            # release per-VM resources
-blockhost-network-hook host-setup <mode>            # one-time host setup at finalization
-blockhost-network-hook host-teardown <mode>         # reverse host-setup
 blockhost-network-hook pre-provision <mode> <plan>  # pre-allocate values for a plan (future)
 blockhost-network-hook mode <vm_name>               # echo the resolved mode (debugging)
-blockhost-network-hook list-modes                   # JSON-line list of installed plugin manifests
+blockhost-network-hook list-available               # installed mode names, one per line
+blockhost-network-hook list-enabled                 # currently-enabled mode names, one per line
+blockhost-network-hook enable <mode>                # symlink available → enabled; validates exclusive_with
+blockhost-network-hook disable <mode>               # remove the enabled symlink
 ```
 
-Exit codes: 0 = ok; 1 = expected failure (missing record, manifest, or plugin command — also propagated from plugins that exit 1); 2 = unexpected exception. Plugin-process exit codes are forwarded as-is.
+Exit codes: 0 = ok; 1 = expected failure (missing record, mode not enabled, exclusivity conflict — also propagated from plugins that exit 1); 2 = unexpected exception. Plugin-process exit codes are forwarded as-is.
+
+Host-side setup that used to be exposed as `host-setup`/`host-teardown` mode-keyed commands now lives in each plugin's `finalize.d/` directory — the wizard's finalization pipeline iterates the enabled modes and runs each script in order (see `NETWORK_INTERFACE.md §5`). Common is no longer involved in host setup.
 
 ## Migration Guide
 
