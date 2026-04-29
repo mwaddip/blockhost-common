@@ -80,7 +80,7 @@ def _load_action_plugins() -> dict:
 
             log.info('Loaded %d actions from %s', loaded, module_name)
         except Exception as e:
-            log.error('Failed to load action module %s: %s', module_name, e)
+            log.exception('%s: %s: %s', path.name, type(e).__name__, e)
 
     return actions
 
