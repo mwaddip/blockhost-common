@@ -50,9 +50,18 @@ interpreter startup + import cost (~50–150 ms each).
 blockhost-vmdb get-vm <vm_name>                       # JSON on stdout, exit 1 if not found
 blockhost-vmdb mark-nft-minted <vm_name> <token_id>   # exit 1 if not found
 blockhost-vmdb extend-expiry <vm_name> <days>         # prints NEEDS_RESUME if previously suspended
+blockhost-vmdb update-fields <vm_name> --fields '{...}'  # engine-defined merge
 
-blockhost-network-hook resolve <vm_name> <bridge_ip> <mode>   # subscriber-facing host
-blockhost-network-hook cleanup <vm_name> <mode>               # release per-mode resources
+# blockhost-network-hook dispatches to the plugin manifested at
+# /usr/share/blockhost/network/<mode>.json — see facts/NETWORK_INTERFACE.md.
+blockhost-network-hook public-address <vm_name>       # publicly-routable address
+blockhost-network-hook push-vm-config <vm_name>       # idempotent VM-side config push
+blockhost-network-hook cleanup <vm_name>              # release per-VM resources
+blockhost-network-hook host-setup <mode>              # one-time host setup at finalization
+blockhost-network-hook host-teardown <mode>           # reverse host-setup
+blockhost-network-hook pre-provision <mode> <plan>    # pre-allocate values for a plan (future)
+blockhost-network-hook mode <vm_name>                 # echo the resolved mode (debugging)
+blockhost-network-hook list-modes                     # JSON-line list of installed plugin manifests
 ```
 
 ### Python Module
@@ -63,7 +72,7 @@ from blockhost.vm_db import get_database
 from blockhost.root_agent import call
 from blockhost.provisioner import get_provisioner
 from blockhost.cloud_init import render_cloud_init
-from blockhost.network_hook import get_connection_endpoint, cleanup
+from blockhost.network import dispatch_vm, dispatch_mode, list_modes, resolve_mode
 
 # Load configuration
 db_config = load_db_config()
@@ -72,6 +81,12 @@ web3_config = load_web3_config()
 # Access VM database
 db = get_database()
 vmid = db.allocate_vmid()
+
+# Register a VM (network_mode is required per NETWORK_INTERFACE.md §3)
+vm = db.register_vm(
+    name='web-001', vmid=vmid, ip='192.168.122.50',
+    network_mode='onion',
+)
 
 # Call root agent daemon (requires root-agent.sock)
 call("qm-start", vmid=vmid)       # Provisioner-specific actions via generic call()
@@ -83,9 +98,16 @@ cmd = p.get_command('create')        # Requires provisioner manifest
 # Cloud-init template rendering
 content = render_cloud_init('nft-auth.yaml', {'VM_NAME': 'web-001'})
 
-# Network-mode-agnostic connection endpoint
-host = get_connection_endpoint('web-001', '192.168.122.50', mode='onion')
-cleanup('web-001', mode='onion')
+# Network plugin dispatch (forwards to /usr/share/blockhost/network/<mode>/...)
+exit_code = dispatch_vm('public-address', 'web-001')
+exit_code = dispatch_mode('host-setup', 'onion')
+mode = resolve_mode('web-001')                       # 'onion'
+
+# Deprecated shim — engines that haven't migrated yet keep working
+# (each call emits a DeprecationWarning)
+from blockhost.network_hook import get_connection_endpoint, cleanup
+host = get_connection_endpoint('web-001', '192.168.122.50', 'onion')
+cleanup('web-001', 'onion')
 ```
 
 ## Development

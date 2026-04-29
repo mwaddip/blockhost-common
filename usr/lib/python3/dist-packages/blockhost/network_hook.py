@@ -1,74 +1,65 @@
-"""Network-mode-agnostic connection endpoint resolution.
+"""Deprecated shim around the network-plugin dispatcher.
 
-Maps a VM's (name, bridge_ip) + network mode to the subscriber-facing host.
+The mode-aware ``get_connection_endpoint(vm, ip, mode)`` /
+``cleanup(vm, mode)`` API was replaced by the per-VM
+``blockhost-network-hook`` CLI and the ``blockhost.network`` Python
+module — see ``facts/NETWORK_INTERFACE.md`` and
+``COMMON_INTERFACE.md §6a``.
 
-- broker: look up VM's IPv6 from vm-db (the broker-allocated address,
-  routable from outside the host); fall back to bridge_ip if missing.
-- manual: pass-through (operator-configured static IP).
-- onion: create Tor hidden service, push .onion into VM, return .onion.
+This module remains so engines that haven't migrated yet keep working.
+Each call emits a ``DeprecationWarning`` and forwards to the dispatcher,
+which resolves the mode from vm-db (the ``mode`` argument is honoured
+but no longer authoritative).
 """
 
-import subprocess
+import warnings
 
-from . import root_agent
-from .provisioner import get_provisioner
-from .vm_db import get_database
+from .network import (
+    DispatchError,
+    dispatch_mode,
+    dispatch_vm,
+    get_connection_endpoint_via_dispatcher,
+)
+
+
+def _warn(name: str) -> None:
+    warnings.warn(
+        f"blockhost.network_hook.{name} is deprecated; call "
+        f"blockhost-network-hook (CLI) or blockhost.network (Python) instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
 
 
 def get_connection_endpoint(vm_name: str, bridge_ip: str, mode: str) -> str:
-    """Return the subscriber-facing host for a VM."""
-    if mode == "onion":
-        return _setup_onion(vm_name, bridge_ip)
-    if mode == "broker":
-        vm = get_database().get_vm(vm_name)
-        if vm and vm.get("ipv6_address"):
-            return vm["ipv6_address"]
-    return bridge_ip
+    """Return the subscriber-facing host for a VM (deprecated).
+
+    ``bridge_ip`` and ``mode`` are accepted for signature compatibility but
+    no longer used: dispatch resolves the mode from ``vm-db.network_mode``
+    and the plugin owns the address-resolution logic. If a plugin can't
+    determine an address it raises — there is no bridge_ip fallback.
+    """
+    _warn("get_connection_endpoint")
+    return get_connection_endpoint_via_dispatcher(vm_name)
 
 
 def cleanup(vm_name: str, mode: str) -> None:
-    """Release network resources allocated for a VM."""
-    if mode == "onion":
-        _teardown_onion(vm_name)
+    """Release per-VM network resources (deprecated).
+
+    ``mode`` is accepted for signature compatibility but ignored — the
+    dispatcher resolves the mode from vm-db. A plugin that doesn't
+    implement ``cleanup`` is treated as a no-op so callers in modes
+    without per-VM teardown (manual) don't crash.
+    """
+    _warn("cleanup")
+    try:
+        dispatch_vm("cleanup", vm_name)
+    except DispatchError as e:
+        # Plugins without a cleanup command (e.g. manual) used to be a
+        # silent no-op in the old hard-coded shim. Preserve that.
+        if "does not implement" in str(e):
+            return
+        raise
 
 
-def _setup_onion(vm_name: str, bridge_ip: str) -> str:
-    response = root_agent.call(
-        "tor-hidden-service-add",
-        vm_name=vm_name,
-        bridge_ip=bridge_ip,
-        port=22,
-    )
-    onion = response["hostname"]
-
-    guest_exec = get_provisioner().get_command("guest-exec")
-    subprocess.run(
-        [guest_exec, vm_name,
-         f"sed -i '/^{bridge_ip} /d' /etc/hosts && "
-         f"echo '{bridge_ip} {onion} {vm_name}' >> /etc/hosts"],
-        check=True,
-    )
-    subprocess.run(
-        [guest_exec, vm_name,
-         f"echo '{onion}' > /run/libpam-web3/signing_host"],
-        check=True,
-    )
-    subprocess.run(
-        [guest_exec, vm_name,
-         f"sed -i 's|signing_url = .*|signing_url = \"http://{onion}:8443\"|' "
-         f"/etc/pam_web3/config.toml"],
-        check=True,
-    )
-    # Tor provides transport encryption — disable TLS in the auth service.
-    subprocess.run(
-        [guest_exec, vm_name,
-         "if grep -q '^use_tls' /etc/pam_web3/config.toml; then "
-         "sed -i 's/^use_tls = .*/use_tls = false/' /etc/pam_web3/config.toml; "
-         "else sed -i '/^\\[auth\\]/a use_tls = false' /etc/pam_web3/config.toml; fi"],
-        check=True,
-    )
-    return onion
-
-
-def _teardown_onion(vm_name: str) -> None:
-    root_agent.call("tor-hidden-service-remove", vm_name=vm_name)
+__all__ = ["get_connection_endpoint", "cleanup"]

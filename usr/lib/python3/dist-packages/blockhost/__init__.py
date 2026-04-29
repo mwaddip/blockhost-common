@@ -38,6 +38,13 @@ from .root_agent import (
 )
 from .provisioner import get_provisioner, ProvisionerDispatcher
 from .cloud_init import render_cloud_init, find_template, list_templates
+from .network import (
+    DispatchError as NetworkDispatchError,
+    dispatch_mode as network_dispatch_mode,
+    dispatch_vm as network_dispatch_vm,
+    list_modes as network_list_modes,
+    resolve_mode as network_resolve_mode,
+)
 from .network_hook import get_connection_endpoint, cleanup as network_cleanup
 from .naming import DOMAIN_NAME_RE, is_valid_domain_name, validate_domain_name
 
@@ -73,7 +80,13 @@ __all__ = [
     "render_cloud_init",
     "find_template",
     "list_templates",
-    # Network hook
+    # Network plugin dispatcher
+    "NetworkDispatchError",
+    "network_dispatch_mode",
+    "network_dispatch_vm",
+    "network_list_modes",
+    "network_resolve_mode",
+    # Deprecated network hook shim (kept until engines migrate)
     "get_connection_endpoint",
     "network_cleanup",
     # Naming validators

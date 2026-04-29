@@ -32,25 +32,45 @@ import fcntl
 import json
 import os
 import tempfile
+import warnings
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
-from .config import load_db_config, load_broker_allocation
+from .config import CONFIG_DIR, load_db_config, load_broker_allocation
 
 
 # Default database file path
 DEFAULT_DB_FILE = "/var/lib/blockhost/vms.json"
 
+# File the wizard writes at finalization with the operator-chosen network mode.
+# Read as a fallback when register_vm is called without an explicit
+# network_mode= during the rollout window (provisioners migrate first;
+# common hard-rejects missing network_mode in a follow-up release).
+NETWORK_MODE_FILE = CONFIG_DIR / "network-mode"
+
 # Keys managed by other mutators — engines must not overwrite these
 # via update_fields. Listed in the order they appear in the VM record
-# schema (§2 in COMMON_INTERFACE.md).
+# schema (§2 in COMMON_INTERFACE.md). network_mode is included because
+# it is set once at register_vm and immutable afterward.
 RESERVED_FIELDS = frozenset({
     "vm_name", "vmid", "status", "created_at", "expires_at",
     "suspended_at", "destroyed_at", "ip_address", "ipv6_address",
-    "nft_token_id", "nft_minted", "nft_minted_at",
+    "nft_token_id", "nft_minted", "nft_minted_at", "network_mode",
 })
+
+
+def _resolve_network_mode_fallback() -> Optional[str]:
+    """Read the wizard-written global network mode for the rollout window.
+
+    Returns the trimmed file contents if present and non-empty, else None.
+    """
+    try:
+        text = NETWORK_MODE_FILE.read_text().strip()
+    except (OSError, FileNotFoundError):
+        return None
+    return text or None
 
 
 def _normalize_ip_pool(ip_pool: dict) -> dict:
@@ -176,6 +196,7 @@ class VMDatabaseBase(ABC):
         purpose: str = "",
         wallet_address: Optional[str] = None,
         username: Optional[str] = None,
+        network_mode: Optional[str] = None,
     ) -> dict:
         """Register a new VM in the database.
 
@@ -189,7 +210,33 @@ class VMDatabaseBase(ABC):
             purpose: Purpose description
             wallet_address: Owner's wallet address
             username: Linux username provisioned on the VM
+            network_mode: Plugin name for ``/usr/share/blockhost/network/<mode>.json``
+                (e.g. ``onion``, ``broker``, ``manual``). Required by the
+                contract; passing ``None`` falls back to reading
+                ``/etc/blockhost/network-mode`` and emits a
+                ``DeprecationWarning`` for the rollout window. Empty string
+                is rejected outright.
         """
+        if network_mode is None:
+            warnings.warn(
+                "register_vm() without network_mode= is deprecated; "
+                "provisioners must read /etc/blockhost/network-mode and "
+                "pass it through. Falling back to the global file for now.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            network_mode = _resolve_network_mode_fallback()
+            if not network_mode:
+                raise ValueError(
+                    "register_vm requires network_mode (no fallback found at "
+                    f"{NETWORK_MODE_FILE}). See NETWORK_INTERFACE.md §3."
+                )
+        elif not isinstance(network_mode, str) or not network_mode.strip():
+            raise ValueError(
+                "network_mode must be a non-empty string "
+                "(see NETWORK_INTERFACE.md §3)"
+            )
+
         result = [None]
 
         def mutator(db):
@@ -211,6 +258,7 @@ class VMDatabaseBase(ABC):
                 "purpose": purpose,
                 "wallet_address": wallet_address,
                 "username": username,
+                "network_mode": network_mode,
             }
 
             db["vms"][name] = vm

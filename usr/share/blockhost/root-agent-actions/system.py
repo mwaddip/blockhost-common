@@ -1,13 +1,13 @@
 """
-Root agent actions: firewall, disk images, wallet, addressbook, broker, tor.
+Root agent actions: firewall, disk images, wallet, addressbook, broker.
+
+Network-mode-specific actions (tor hidden services, broker IPv6 routing,
+…) live in plugin packages — see ``facts/NETWORK_INTERFACE.md`` and
+``COMMON_INTERFACE.md §7``. Common's root-agent stays generic.
 """
 
-import ipaddress
 import json
 import os
-import shutil
-import time
-from pathlib import Path
 
 from _common import (
     CONFIG_DIR,
@@ -19,11 +19,6 @@ from _common import (
     log,
     run,
 )
-
-TOR_DIR = Path('/var/lib/tor')
-TORRC_PATH = Path('/etc/tor/torrc')
-TOR_HOSTNAME_WAIT_SECONDS = 3.0
-TOR_HOSTNAME_POLL_INTERVAL = 0.1
 
 
 def handle_iptables_open(params):
@@ -137,89 +132,10 @@ def handle_broker_renew(params):
     return {'ok': True, 'output': out}
 
 
-def handle_tor_hidden_service_add(params):
-    vm_name = params.get('vm_name', '')
-    if not SHORT_NAME_RE.match(vm_name):
-        return {'ok': False, 'error': f'Invalid vm_name: {vm_name}'}
-    bridge_ip = params.get('bridge_ip', '')
-    try:
-        ipaddress.ip_address(bridge_ip)
-    except ValueError:
-        return {'ok': False, 'error': f'Invalid bridge_ip: {bridge_ip}'}
-    port = params.get('port', 22)
-    if not isinstance(port, int) or port < 1 or port > 65535:
-        return {'ok': False, 'error': 'port must be 1-65535'}
-
-    service_dir = TOR_DIR / f'blockhost-{vm_name}'
-    service_dir.mkdir(parents=True, exist_ok=True)
-    rc, out, err = run(['chown', '-R', 'debian-tor:debian-tor', str(service_dir)])
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-    os.chmod(str(service_dir), 0o700)
-
-    with open(TORRC_PATH, 'a') as f:
-        f.write(f'\nHiddenServiceDir {service_dir}/\n')
-        f.write(f'HiddenServicePort {port} {bridge_ip}:{port}\n')
-
-    rc, out, err = run(['systemctl', 'reload', 'tor'])
-    if rc != 0:
-        return {'ok': False, 'error': err or out}
-
-    hostname_file = service_dir / 'hostname'
-    deadline = time.monotonic() + TOR_HOSTNAME_WAIT_SECONDS
-    while time.monotonic() < deadline:
-        if hostname_file.exists():
-            hostname = hostname_file.read_text().strip()
-            if hostname:
-                log.info('Created hidden service for %s: %s', vm_name, hostname)
-                return {'ok': True, 'hostname': hostname}
-        time.sleep(TOR_HOSTNAME_POLL_INTERVAL)
-    return {'ok': False, 'error': 'tor did not generate hostname file in time'}
-
-
-def handle_tor_hidden_service_remove(params):
-    vm_name = params.get('vm_name', '')
-    if not SHORT_NAME_RE.match(vm_name):
-        return {'ok': False, 'error': f'Invalid vm_name: {vm_name}'}
-
-    service_dir = TOR_DIR / f'blockhost-{vm_name}'
-    marker = f'{service_dir}/'
-
-    if TORRC_PATH.exists():
-        original = TORRC_PATH.read_text()
-        filtered = []
-        skip_block = False
-        for line in original.splitlines(keepends=True):
-            stripped = line.strip()
-            if stripped.startswith('HiddenServiceDir'):
-                skip_block = marker in line
-                if not skip_block:
-                    filtered.append(line)
-            elif stripped.startswith('HiddenService'):
-                if not skip_block:
-                    filtered.append(line)
-            else:
-                skip_block = False
-                filtered.append(line)
-        new_content = ''.join(filtered)
-        if new_content != original:
-            TORRC_PATH.write_text(new_content)
-            rc, out, err = run(['systemctl', 'reload', 'tor'])
-            if rc != 0:
-                return {'ok': False, 'error': err or out}
-
-    if service_dir.exists():
-        shutil.rmtree(str(service_dir), ignore_errors=True)
-    log.info('Removed hidden service for %s', vm_name)
-    return {'ok': True}
-
-
 ACTIONS = {
     'iptables-open': handle_iptables_open,
     'iptables-close': handle_iptables_close,
     'virt-customize': handle_virt_customize,
     'addressbook-save': handle_addressbook_save,
     'broker-renew': handle_broker_renew,
-    'tor-hidden-service-add': handle_tor_hidden_service_add,
-    'tor-hidden-service-remove': handle_tor_hidden_service_remove,
 }

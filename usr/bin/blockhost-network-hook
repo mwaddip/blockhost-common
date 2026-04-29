@@ -1,48 +1,152 @@
 #!/usr/bin/python3
-"""blockhost-network-hook — CLI wrapper around blockhost.network_hook.
+"""blockhost-network-hook — network-plugin dispatcher CLI.
 
-Engines call this binary instead of spawning python3 -c "<inline-script>",
-which avoids per-call interpreter startup + import cost (~50-150 ms each).
+Resolves a VM's ``network_mode`` from vm-db and forwards to the plugin
+manifested at ``/usr/share/blockhost/network/<mode>.json``. Common ships
+this dispatcher; mode-specific code (onion, broker, manual, none) lives
+in plugins from the main repo / installer.
+
+See ``facts/NETWORK_INTERFACE.md`` for the full contract.
+
+Exit codes follow the convention in ``COMMON_INTERFACE.md §6a``:
+  0 = success
+  1 = expected failure (missing record, missing manifest, plugin's own exit 1)
+  2 = unexpected exception
+Plugin commands' own exit codes are forwarded as-is.
 """
 
 import argparse
+import json
+import os
 import sys
 
-from blockhost.network_hook import cleanup, get_connection_endpoint
+from blockhost.network import (
+    DispatchError,
+    dispatch_mode,
+    dispatch_vm,
+    list_modes,
+    resolve_mode,
+)
 
 
-def cmd_resolve(args):
-    host = get_connection_endpoint(args.vm_name, args.bridge_ip, args.mode)
-    sys.stdout.write(host + "\n")
-    return 0
+def cmd_public_address(args):
+    return dispatch_vm("public-address", args.vm_name)
+
+
+def cmd_push_vm_config(args):
+    return dispatch_vm("push-vm-config", args.vm_name)
 
 
 def cmd_cleanup(args):
-    cleanup(args.vm_name, args.mode)
+    return dispatch_vm("cleanup", args.vm_name)
+
+
+def cmd_host_setup(args):
+    return dispatch_mode("host-setup", args.mode)
+
+
+def cmd_host_teardown(args):
+    return dispatch_mode("host-teardown", args.mode)
+
+
+def cmd_pre_provision(args):
+    return dispatch_mode(
+        "pre-provision",
+        args.mode,
+        extra_argv=[args.plan_id],
+        extra_env={"BH_PLAN_ID": args.plan_id},
+    )
+
+
+def cmd_mode(args):
+    sys.stdout.write(resolve_mode(args.vm_name) + "\n")
+    return 0
+
+
+def cmd_list_modes(args):
+    for manifest in list_modes():
+        entry = {
+            "name": manifest.get("name"),
+            "display_name": manifest.get("display_name", ""),
+            "description": manifest.get("description", ""),
+        }
+        sys.stdout.write(json.dumps(entry) + "\n")
     return 0
 
 
 def main():
-    parser = argparse.ArgumentParser(prog="blockhost-network-hook")
+    parser = argparse.ArgumentParser(
+        prog="blockhost-network-hook",
+        description="Dispatch network-layer operations to the plugin "
+                    "registered for a VM's network_mode.",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("resolve", help="Resolve subscriber-facing host for a VM")
+    p = sub.add_parser(
+        "public-address",
+        help="Print the publicly-routable address for a VM.",
+    )
     p.add_argument("vm_name")
-    p.add_argument("bridge_ip")
-    p.add_argument("mode", help="broker | manual | onion")
-    p.set_defaults(func=cmd_resolve)
+    p.set_defaults(func=cmd_public_address)
 
-    p = sub.add_parser("cleanup", help="Release network resources on VM destroy")
+    p = sub.add_parser(
+        "push-vm-config",
+        help="Push mode-specific configuration into a VM (idempotent).",
+    )
     p.add_argument("vm_name")
-    p.add_argument("mode", help="broker | manual | onion")
+    p.set_defaults(func=cmd_push_vm_config)
+
+    p = sub.add_parser(
+        "cleanup",
+        help="Release per-VM resources allocated by the plugin.",
+    )
+    p.add_argument("vm_name")
     p.set_defaults(func=cmd_cleanup)
+
+    p = sub.add_parser(
+        "host-setup",
+        help="One-time host setup at finalization for a network mode.",
+    )
+    p.add_argument("mode")
+    p.set_defaults(func=cmd_host_setup)
+
+    p = sub.add_parser(
+        "host-teardown",
+        help="Reverse host-setup for a network mode.",
+    )
+    p.add_argument("mode")
+    p.set_defaults(func=cmd_host_teardown)
+
+    p = sub.add_parser(
+        "pre-provision",
+        help="Pre-allocate values for a plan (future; mode + plan id).",
+    )
+    p.add_argument("mode")
+    p.add_argument("plan_id")
+    p.set_defaults(func=cmd_pre_provision)
+
+    p = sub.add_parser(
+        "mode",
+        help="Print the resolved network_mode for a VM (debugging).",
+    )
+    p.add_argument("vm_name")
+    p.set_defaults(func=cmd_mode)
+
+    p = sub.add_parser(
+        "list-modes",
+        help="List installed network plugin manifests (one JSON object per line).",
+    )
+    p.set_defaults(func=cmd_list_modes)
 
     args = parser.parse_args()
     try:
         sys.exit(args.func(args))
-    except Exception as e:
+    except DispatchError as e:
         print(str(e), file=sys.stderr)
         sys.exit(1)
+    except Exception as e:
+        print(f"{type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit(2)
 
 
 if __name__ == "__main__":

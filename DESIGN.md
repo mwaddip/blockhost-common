@@ -60,10 +60,16 @@ blockhost-engine-evm (populates configs via init-server.sh)
 ├── __init__.py                     # Package exports
 ├── cloud_init.py                   # Cloud-init template discovery and rendering
 ├── config.py                       # Path constants, config loading
-├── network_hook.py                 # Connection endpoint resolution (broker/manual/onion)
+├── naming.py                       # Domain-name validators
+├── network.py                      # Network-plugin dispatcher (used by blockhost-network-hook CLI)
+├── network_hook.py                 # DEPRECATED shim — kept until engines migrate
 ├── provisioner.py                  # Provisioner dispatcher (pluggable backends)
 ├── root_agent.py                   # Root agent daemon client
 └── vm_db.py                        # VM database abstraction
+
+/usr/bin/
+├── blockhost-vmdb                  # CLI wrapper for VMDatabase
+└── blockhost-network-hook          # Network-plugin dispatcher CLI
 
 /usr/share/blockhost/cloud-init/templates/
 ├── devbox.yaml                     # Development environment template
@@ -84,6 +90,18 @@ blockhost-engine-evm (populates configs via init-server.sh)
 /etc/systemd/system/
 └── blockhost-root-agent.service    # Systemd unit for root agent daemon
 ```
+
+### Network plugins (NOT shipped by common)
+
+Common ships only the dispatcher (`blockhost-network-hook` and `blockhost.network`). Mode-specific code lives in plugin packages from the main repo / installer:
+
+```
+/usr/share/blockhost/network/
+├── <mode>.json                     # Plugin manifest (commands, validation)
+└── <mode>/                         # Plugin scripts referenced by manifest
+```
+
+Plugins ship from the main repo. See `facts/NETWORK_INTERFACE.md` for the manifest schema and command set.
 
 ### Created by blockhost-engine-evm init
 
@@ -179,6 +197,7 @@ vm = db.register_vm(
     ipv6=ipv6,            # Optional IPv6 address
     owner="user",
     expiry_days=30,
+    network_mode="onion", # Plugin name from /usr/share/blockhost/network/<mode>.json
 )
 
 # Record minted NFT on VM
@@ -244,10 +263,14 @@ ACTIONS = {
 
 **Core modules** (shipped by blockhost-common):
 - `networking.py` — `ip6-route-add`, `ip6-route-del`, `bridge-port-isolate`
-- `system.py` — `iptables-open`, `iptables-close`, `virt-customize`, `addressbook-save`, `broker-renew`, `tor-hidden-service-add`, `tor-hidden-service-remove`
+- `system.py` — `iptables-open`, `iptables-close`, `virt-customize`, `addressbook-save`, `broker-renew`
 
 **Provisioner modules** (shipped by provisioner packages):
 - e.g. `qm.py` — `qm-start`, `qm-stop`, `qm-create`, etc.
+
+**Network plugin modules** (shipped by main repo / installer):
+- `onion-actions.py` (or similar) — `tor-hidden-service-add`, `tor-hidden-service-remove`
+- Each plugin owns its own root-agent action module; common stays generic.
 
 ### blockhost.provisioner
 
@@ -304,35 +327,68 @@ names = list_templates()  # ['devbox.yaml', 'nft-auth.yaml']
 
 Template search order: extra_dirs (if provided) → `/usr/share/blockhost/cloud-init/templates/` → `cloud-init/templates/` (dev fallback). Uses `string.Template.safe_substitute` so shell variables in templates are preserved.
 
-### blockhost.network_hook
+### blockhost.network
+
+The dispatcher behind `blockhost-network-hook`. Mode-specific logic lives in plugins under `/usr/share/blockhost/network/<mode>/`, manifested at `/usr/share/blockhost/network/<mode>.json`. Common ships only the lookup and exec.
 
 ```python
-from blockhost.network_hook import (
-    get_connection_endpoint,  # Resolve subscriber-facing host for a VM
-    cleanup,                  # Release per-VM network resources on destroy
+from blockhost.network import (
+    DispatchError,        # Raised when manifest/command/VM record is missing
+    resolve_mode,         # vm-db.network_mode[<vm>] → str
+    dispatch_vm,          # exec plugin command for a VM (resolves mode)
+    dispatch_mode,        # exec plugin command keyed by explicit mode (host-setup etc.)
+    list_modes,           # list installed plugin manifests
 )
 
-# Modes: "broker" looks up the VM's IPv6 address from vm-db (the broker-allocated
-# address, routable from outside the host) and falls back to bridge_ip if the
-# record lacks one. "manual" passes the bridge_ip through (operator-configured
-# static IP). "onion" creates a Tor hidden service via the root agent, pushes
-# the .onion into the VM via the provisioner's guest-exec command, and returns
-# the .onion address.
-host = get_connection_endpoint('web-001', '192.168.122.50', mode='onion')
-cleanup('web-001', mode='onion')
+# Resolve a VM's mode and run its public-address command
+rc = dispatch_vm("public-address", "blockhost-001")
+
+# Mode-keyed (no VM lookup)
+rc = dispatch_mode("host-setup", "onion")
 ```
 
-The onion path uses two root agent actions (`tor-hidden-service-add`, `tor-hidden-service-remove`) shipped in `system.py`, and the provisioner-supplied `guest-exec` command resolved via `ProvisionerDispatcher.get_command("guest-exec")`.
+Resolution rules (per `facts/NETWORK_INTERFACE.md §7`):
+
+1. Read `vm-db.network_mode[<vm>]`. Missing → `DispatchError` (no fallback to global mode — the field is required by the schema).
+2. Read manifest at `/usr/share/blockhost/network/<mode>.json`. Missing → `DispatchError`.
+3. Look up `manifest.commands.<subcommand>`. Missing → `DispatchError` (`plugin does not implement <subcommand>`).
+4. Exec the plugin command with `BH_VM_NAME=<vm>` (or `BH_PLAN_ID=<id>` for `pre-provision`) in the environment plus the same args on argv. Forward stdout/stderr/exit code unchanged.
+
+### blockhost.network_hook (DEPRECATED)
+
+Thin shim around the dispatcher kept for engines that haven't migrated. Each call emits a `DeprecationWarning`:
+
+```python
+from blockhost.network_hook import get_connection_endpoint, cleanup
+
+# bridge_ip and mode arguments are accepted for signature compatibility
+# but ignored — the dispatcher resolves the mode from vm-db.
+host = get_connection_endpoint('web-001', '192.168.122.50', 'onion')
+cleanup('web-001', 'onion')
+```
+
+Planned for removal once engines migrate to the `blockhost-network-hook` CLI / `blockhost.network` Python module.
 
 ### CLIs
 
-Two engine helpers in `/usr/bin/`. They are thin wrappers around `blockhost.vm_db` and `blockhost.network_hook`. The point is to let TypeScript / Go / Bash callers spawn a binary instead of `python3 -c "<inline-script>"` — one Python startup per call instead of one per inline import + dispatch.
+Two engine helpers in `/usr/bin/`. The point is to let TypeScript / Go / Bash callers spawn a binary instead of `python3 -c "<inline-script>"` — one Python startup per call instead of one per inline import + dispatch.
 
-`blockhost-vmdb` exposes record-level operations callers actually need at runtime: `get-vm` (JSON on stdout), `mark-nft-minted`, and `extend-expiry` (the suspend-aware variant: prints `NEEDS_RESUME` on a second line when the VM was suspended at the moment of extend, so the caller knows to invoke the provisioner's `resume` command).
+`blockhost-vmdb` exposes record-level operations: `get-vm` (JSON on stdout), `mark-nft-minted`, `extend-expiry` (suspend-aware: prints `NEEDS_RESUME` on a second line when the VM was suspended at extend time), and `update-fields` (engine-defined field merge).
 
-`blockhost-network-hook` exposes `resolve` (computes the subscriber-facing host for a given mode) and `cleanup` (releases per-mode resources on VM destroy). Behavior mirrors the Python API exactly — same modes, same return semantics.
+`blockhost-network-hook` is the network-plugin dispatcher (see `facts/COMMON_INTERFACE.md §6a` and `NETWORK_INTERFACE.md §7`):
 
-Exit codes follow Unix conventions: 0 = ok, 1 = expected failure (not found, validation error), 2 = unexpected exception. Stderr carries human-readable error messages.
+```bash
+blockhost-network-hook public-address <vm_name>     # publicly-routable address
+blockhost-network-hook push-vm-config <vm_name>     # idempotent VM-side config push
+blockhost-network-hook cleanup <vm_name>            # release per-VM resources
+blockhost-network-hook host-setup <mode>            # one-time host setup at finalization
+blockhost-network-hook host-teardown <mode>         # reverse host-setup
+blockhost-network-hook pre-provision <mode> <plan>  # pre-allocate values for a plan (future)
+blockhost-network-hook mode <vm_name>               # echo the resolved mode (debugging)
+blockhost-network-hook list-modes                   # JSON-line list of installed plugin manifests
+```
+
+Exit codes: 0 = ok; 1 = expected failure (missing record, manifest, or plugin command — also propagated from plugins that exit 1); 2 = unexpected exception. Plugin-process exit codes are forwarded as-is.
 
 ## Migration Guide
 
